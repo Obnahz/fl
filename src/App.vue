@@ -230,7 +230,7 @@
     inset: 0;
     content: '';
     pointer-events: none;
-    background: url('/xiuxian-landscape.png') center bottom / cover no-repeat;
+    background: url('/xiuxian-landscape.webp') center bottom / cover no-repeat;
     filter: saturate(.74) contrast(.94);
     opacity: .74;
   }

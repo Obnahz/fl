@@ -4,7 +4,6 @@ import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
 import Components from 'unplugin-vue-components/vite'
 import { defineConfig } from 'vite'
 import pkg from './package.json'
-import vitePluginBundleObfuscator from 'vite-plugin-bundle-obfuscator'
 
 export default defineConfig({
   define: {
@@ -51,28 +50,6 @@ export default defineConfig({
     }),
     Components({
       resolvers: [NaiveUiResolver()]
-    }),
-    vitePluginBundleObfuscator({
-      log: false,
-      enable: true,
-      options: {
-        log: false,
-        compact: true,
-        stringArray: true,
-        renameGlobals: false,
-        selfDefending: false,
-        debugProtection: false,
-        rotateStringArray: true,
-        deadCodeInjection: false,
-        stringArrayEncoding: ['none'],
-        disableConsoleOutput: true,
-        stringArrayThreshold: 0.75,
-        controlFlowFlattening: false,
-        unicodeEscapeSequence: true,
-        identifierNamesGenerator: 'hexadecimal'
-      },
-      // excludes: ['router.js'],
-      autoExcludeNodeModules: true
     })
   ],
   worker: {
