@@ -1,7 +1,7 @@
 <template>
   <main class="creation-page">
     <section class="creation-intro" aria-labelledby="creation-title">
-      <img class="creation-sigil" src="/tianmi-icon.png" alt="" aria-hidden="true" />
+      <img class="creation-sigil" :src="iconImage" alt="" aria-hidden="true" />
       <p class="eyebrow">凡尘将远，仙途初启</p>
       <h1 id="creation-title">测灵根，定道号</h1>
       <p class="intro-copy">每一种灵根都会改变修炼节奏。此后仍可通过功法、丹药与机缘补足短板。</p>
@@ -71,6 +71,7 @@
   import { useRouter } from 'vue-router'
   import { useMessage } from 'naive-ui'
   import { EnterOutline, RefreshOutline } from '@vicons/ionicons5'
+  import iconImage from '../assets/tianmi-icon.png'
   import { SPIRITUAL_ROOTS } from '../plugins/gameRules'
   import { usePlayerStore } from '../stores/player'
 

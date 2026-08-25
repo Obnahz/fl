@@ -3,13 +3,13 @@
     <n-message-provider>
       <n-dialog-provider>
         <n-spin :show="isLoading" description="正在加载游戏数据...">
-          <n-layout class="app-shell">
+          <n-layout class="app-shell" :style="{ '--landscape-image': `url(${landscapeImage})` }">
             <n-layout-header bordered class="site-header">
               <div class="header-content">
                 <n-page-header>
                   <template #title>
                     <span class="brand-title">
-                      <img class="brand-sigil" src="/tianmi-icon.png" alt="" aria-hidden="true" />
+                      <img class="brand-sigil" :src="iconImage" alt="" aria-hidden="true" />
                       <span>挂机也成仙</span>
                     </span>
                   </template>
@@ -102,6 +102,8 @@
     SmileOutlined
   } from '@ant-design/icons-vue'
   import { Moon, Sunny } from '@vicons/ionicons5'
+  import iconImage from './assets/tianmi-icon.png'
+  import landscapeImage from './assets/xiuxian-landscape.webp'
   import { getRealmName } from './plugins/realm'
   import { getSpiritualRoot } from './plugins/gameRules'
   import { usePlayerStore } from './stores/player'
@@ -230,7 +232,7 @@
     inset: 0;
     content: '';
     pointer-events: none;
-    background: url('/xiuxian-landscape.webp') center bottom / cover no-repeat;
+    background: var(--landscape-image) center bottom / cover no-repeat;
     filter: saturate(.74) contrast(.94);
     opacity: .74;
   }
