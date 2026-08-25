@@ -16,14 +16,6 @@ export default defineConfig({
     chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
-        manualChunks: id => {
-          if (id.includes('node_modules')) {
-            if (id.includes('naive-ui')) return 'naive-ui'
-            if (id.includes('vue')) return 'vue-vendor'
-            if (id.includes('pinia')) return 'pinia-vendor'
-            return 'vendor'
-          }
-        },
         chunkFileNames: 'assets/js/[name]-[hash].js',
         entryFileNames: 'assets/js/[name]-[hash].js',
         assetFileNames: () => {
