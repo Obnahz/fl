@@ -1,0 +1,7 @@
+autoOpen: true
+apps:
+  - port: 2025
+    run: pnpm run dev:cloudstudio
+    root: .
+    name: xiuxian-game
+    description: Vue idle cultivation game
