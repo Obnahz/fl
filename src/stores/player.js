@@ -28,6 +28,7 @@ import { buildDungeonPlayerCombatant, resolveAutoCombat } from '../plugins/comba
 import { getCultivationTelemetry, recordCultivationTelemetry } from '../plugins/cultivationTelemetry'
 import { getEnemiesForLocation } from '../plugins/enemies'
 import { locations } from '../plugins/locations'
+import { herbs as herbDefinitions, getHerbValue } from '../plugins/herbs'
 import {
   changeCaveFacility,
   claimCaveRewards,
@@ -440,6 +441,21 @@ export const usePlayerStore = defineStore('player', {
         : [...storedSkills, STARTER_TECHNIQUE_ID]
       const techniqueLevels = normalizeTechniqueLevels(data.techniqueLevels)
       const techniqueFragments = normalizeTechniqueFragments(data.techniqueFragments)
+      const normalizedHerbs = Array.isArray(data.herbs)
+        ? data.herbs.map(herb => {
+            const definition = herbDefinitions.find(item => item.id === herb?.id)
+            if (!definition) return herb
+            const quality = herb?.quality || 'common'
+            return {
+              ...definition,
+              ...herb,
+              quality,
+              value: Number.isFinite(herb?.value)
+                ? herb.value
+                : getHerbValue(definition, quality)
+            }
+          })
+        : []
       normalizeUnlockedTechniques(unlockedSkills).forEach(skillId => {
         if (!techniqueLevels[skillId]) techniqueLevels[skillId] = 1
       })
@@ -451,6 +467,7 @@ export const usePlayerStore = defineStore('player', {
       return {
         ...this.$state,
         ...data,
+        herbs: normalizedHerbs,
         level,
         realm: realm.name,
         maxCultivation: realm.maxCultivation,
