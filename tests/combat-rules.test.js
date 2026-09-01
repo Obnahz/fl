@@ -7,7 +7,8 @@ import {
   calculateCombatHit,
   resolveAutoCombat
 } from '../src/plugins/combatRules.js'
-import { CombatEntity, CombatManager } from '../src/plugins/combat.js'
+import { CombatEntity, CombatManager, CombatType, generateEnemy } from '../src/plugins/combat.js'
+import { getRealmBaseAttributes } from '../src/plugins/realm.js'
 import {
   getBossForLocation,
   getEnemiesForLocation,
@@ -95,6 +96,28 @@ test('dungeon player combatant composes equipment, pet, pill effects, and active
   assert.equal(combatant.technique.id, 'linked-technique')
 })
 
+test('stacked combat pill effects have bounded aggregate bonuses', () => {
+  const combatant = buildDungeonPlayerCombatant({
+    player: {
+      name: 'bounded player',
+      level: 10,
+      realm: '筑基一重',
+      currentHealth: 100,
+      baseAttributes: { health: 100, attack: 100, defense: 100, speed: 100 },
+      specialAttributes: { combatBoost: 0.4 },
+      activeEffects: [
+        { type: 'allAttributes', value: 0.6 },
+        { type: 'allAttributes', value: 0.6 },
+        { type: 'combatBoost', value: 0.6 },
+        { type: 'combatBoost', value: 0.6 }
+      ]
+    }
+  })
+
+  assert.equal(combatant.stats.attack, 175)
+  assert.equal(combatant.stats.combatBoost, 0.75)
+})
+
 test('dungeon combat does not double count pet bonuses already applied to player attributes', () => {
   const combatant = buildDungeonPlayerCombatant({
     player: {
@@ -129,6 +152,180 @@ test('dungeon combat manager consumes the linked player technique', () => {
   assert.equal(result.state, 'in_progress')
   assert.ok(result.results[0].damage > 20 * (100 / 200))
   assert.ok(manager.getCombatLog().length > 0)
+})
+
+test('combat entities preserve supplied current health between dungeon floors', () => {
+  const player = new CombatEntity('player', 10, {
+    health: 37,
+    maxHealth: 100,
+    damage: 20,
+    defense: 5,
+    speed: 10
+  })
+
+  assert.equal(player.currentHealth, 37)
+})
+
+test('critical damage reduction applies to critical hits and is capped safely', () => {
+  const attacker = new CombatEntity('attacker', 1, { health: 100, damage: 100, critRate: 1 })
+  const defender = new CombatEntity('defender', 1, {
+    health: 1000,
+    defense: 0,
+    dodgeRate: 0,
+    critDamageReduce: 0.5
+  })
+
+  const normal = defender.takeDamage(100, attacker, { isCrit: false })
+  defender.currentHealth = 1000
+  const critical = defender.takeDamage(200, attacker, { isCrit: true })
+
+  assert.equal(normal.damage, 100)
+  assert.equal(critical.damage, 100)
+})
+
+test('shared core attributes produce the same damage in both combat engines', () => {
+  const originalRandom = Math.random
+  Math.random = () => 0.9
+  try {
+    const attackerStats = {
+      health: 1000,
+      maxHealth: 1000,
+      damage: 100,
+      attack: 100,
+      defense: 0,
+      speed: 20,
+      critRate: 1,
+      dodgeRate: 0,
+      combatBoost: 0.2,
+      critDamageBoost: 0.5,
+      finalDamageBoost: 0.1
+    }
+    const defenderStats = {
+      health: 1000,
+      maxHealth: 1000,
+      currentHealth: 1000,
+      damage: 1,
+      attack: 1,
+      defense: 100,
+      speed: 10,
+      dodgeRate: 0,
+      combatBoost: 0.2,
+      critDamageReduce: 0.25,
+      finalDamageReduce: 0.1
+    }
+    const attacker = new CombatEntity('attacker', 1, attackerStats)
+    const defender = new CombatEntity('defender', 1, defenderStats)
+    const attack = attacker.stats.calculateDamage(defender)
+    const managerDamage = defender.takeDamage(attack.damage, attacker, { isCrit: attack.isCrit }).damage
+    const rulesDamage = calculateCombatHit({
+      attacker: attackerStats,
+      defender: defenderStats,
+      rolls: { dodge: 0.99, crit: 0.9, variance: 0.5 }
+    }).damage
+
+    assert.equal(Math.round(managerDamage), rulesDamage)
+  } finally {
+    Math.random = originalRandom
+  }
+})
+
+test('counterattacks deal an extra hit instead of replacing a normal action', () => {
+  const originalRandom = Math.random
+  Math.random = () => 0.9
+  try {
+    const player = new CombatEntity('player', 1, {
+      health: 1000, damage: 20, defense: 0, speed: 20,
+      critRate: 0, dodgeRate: 0, counterRate: 0
+    })
+    const enemy = new CombatEntity('enemy', 1, {
+      health: 1000, damage: 10, defense: 0, speed: 10,
+      critRate: 0, dodgeRate: 0, counterRate: 1
+    })
+    const manager = new CombatManager(player, enemy)
+    manager.start()
+
+    const result = manager.executeTurn()
+
+    assert.equal(result.results.filter(action => action.attacker === 'enemy').length, 2)
+    assert.equal(result.results.some(action => action.isCounter), true)
+    assert.equal(player.currentHealth, 980)
+  } finally {
+    Math.random = originalRandom
+  }
+})
+
+test('a stun from the slower combatant skips the faster combatant next round', () => {
+  const originalRandom = Math.random
+  Math.random = () => 0.9
+  try {
+    const player = new CombatEntity('player', 1, {
+      health: 1000, damage: 10, defense: 0, speed: 20,
+      critRate: 0, dodgeRate: 0, stunRate: 0
+    })
+    const enemy = new CombatEntity('enemy', 1, {
+      health: 1000, damage: 10, defense: 0, speed: 10,
+      critRate: 0, dodgeRate: 0, stunRate: 1
+    })
+    const manager = new CombatManager(player, enemy)
+    manager.start()
+    manager.executeTurn()
+
+    const secondRound = manager.executeTurn()
+
+    assert.equal(secondRound.results[0].attacker, 'enemy')
+    assert.equal(secondRound.results.some(action => action.attacker === 'player'), false)
+  } finally {
+    Math.random = originalRandom
+  }
+})
+
+test('enemy scaling is monotonic across five difficulties and caps probability defenses', () => {
+  const enemies = [1, 2, 3, 4, 5].map(difficulty => generateEnemy(100, CombatType.BOSS, difficulty))
+
+  for (let index = 1; index < enemies.length; index++) {
+    assert.ok(enemies[index].stats.maxHealth > enemies[index - 1].stats.maxHealth)
+    assert.ok(enemies[index].stats.damage > enemies[index - 1].stats.damage)
+  }
+  for (const enemy of enemies) {
+    assert.ok(enemy.stats.critRate <= 0.45)
+    assert.ok(enemy.stats.comboRate <= 0.45)
+    assert.ok(enemy.stats.counterRate <= 0.4)
+    assert.ok(enemy.stats.stunRate <= 0.3)
+    assert.ok(enemy.stats.dodgeRate <= 0.35)
+    assert.ok(enemy.stats.finalDamageReduce <= 0.5)
+    assert.ok(enemy.stats.critDamageReduce <= 0.6)
+  }
+})
+
+test('a normally equipped spirit-transformation character clears floor five across all difficulties', () => {
+  const base = getRealmBaseAttributes(37)
+  const stats = {
+    health: base.health + 700,
+    maxHealth: base.health + 700,
+    damage: base.attack + 120,
+    defense: base.defense + 120,
+    speed: base.speed + 50,
+    critRate: 0.25,
+    comboRate: 0.2,
+    counterRate: 0.15,
+    dodgeRate: 0.12,
+    critDamageBoost: 0.25,
+    critDamageReduce: 0.25
+  }
+  const originalRandom = Math.random
+  Math.random = () => 0.5
+  try {
+    for (const difficulty of [1, 2, 3, 4, 5]) {
+      const player = new CombatEntity('player', 37, stats)
+      const enemy = generateEnemy(5, CombatType.ELITE, difficulty)
+      const combat = new CombatManager(player, enemy)
+      combat.start()
+      while (combat.state === 'in_progress') combat.executeTurn()
+      assert.equal(combat.state, 'victory', `difficulty ${difficulty} floor five should be clearable`)
+    }
+  } finally {
+    Math.random = originalRandom
+  }
 })
 
 test('ratio defense mitigation reduces damage but never below one', () => {

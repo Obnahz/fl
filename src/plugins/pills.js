@@ -19,6 +19,22 @@ export const pillTypes = {
   special: { name: '特殊类', effectMultiplier: 2 }
 }
 
+export const PILL_EFFECT_CAPS = {
+  spiritRate: 0.75,
+  cultivationRate: 1.5,
+  cultivationEfficiency: 1,
+  combatBoost: 0.6,
+  allAttributes: 0.6,
+  spiritCap: 1,
+  autoHeal: 0.25,
+  spiritRecovery: 0.8,
+  comprehension: 0.6,
+  fireAttribute: 0.75
+}
+
+const clamp = (value, minimum, maximum) =>
+  Math.min(maximum, Math.max(minimum, Number(value) || 0))
+
 // 根据品阶计算所需残页数量
 const getFragmentsNeeded = grade => {
   const gradeNumber = parseInt(grade.replace('grade', ''))
@@ -237,18 +253,37 @@ export const pillRecipes = [
 export const calculatePillEffect = (recipe, playerLevel) => {
   const grade = pillGrades[recipe.grade]
   const type = pillTypes[recipe.type]
-  // 基础效果随境界提升
-  const levelMultiplier = 1 + (playerLevel - 1) * 0.1
+  const normalizedLevel = Math.max(1, Math.floor(Number(playerLevel) || 1))
+  const levelMultiplier = Math.min(2, 1 + (normalizedLevel - 1) * 0.03)
+  const effectType = recipe.baseEffect.type
+  const cap = PILL_EFFECT_CAPS[effectType] ?? 1
   return {
-    type: recipe.baseEffect.type,
-    value: recipe.baseEffect.value * type.effectMultiplier * levelMultiplier,
-    duration: recipe.baseEffect.duration,
+    type: effectType,
+    value: clamp(recipe.baseEffect.value * type.effectMultiplier * levelMultiplier, 0, cap),
+    duration: Math.min(8 * 60 * 60, Math.max(1, Math.floor(Number(recipe.baseEffect.duration) || 1))),
     successRate: grade.successRate
   }
 }
 
+export const normalizeActivePillEffects = (effects, now = Date.now()) => {
+  const checkedAt = Number.isFinite(Number(now)) ? Number(now) : Date.now()
+  if (!Array.isArray(effects)) return []
+  return effects
+    .filter(effect => effect && Number(effect.endTime) > checkedAt)
+    .map(effect => {
+      const cap = PILL_EFFECT_CAPS[effect.type] ?? 1
+      return { ...effect, value: clamp(effect.value, 0, cap), endTime: Number(effect.endTime) }
+    })
+}
+
+export const getActivePillBonuses = (effects, now = Date.now()) =>
+  normalizeActivePillEffects(effects, now).reduce((bonuses, effect) => {
+    bonuses[effect.type] = (bonuses[effect.type] || 0) + effect.value
+    return bonuses
+  }, {})
+
 // 尝试合成丹药
-export const tryCreatePill = (recipe, herbs, player, fragments = 0, luck = 1) => {
+export const tryCreatePill = (recipe, herbs, player, fragments = 0, luck = 1, roll = Math.random()) => {
   // 检查材料是否足够
   for (const material of recipe.materials) {
     const herbCount = herbs.filter(h => h.id === material.herb).length
@@ -262,8 +297,10 @@ export const tryCreatePill = (recipe, herbs, player, fragments = 0, luck = 1) =>
   }
   // 计算成功率（受幸运值影响）
   const grade = pillGrades[recipe.grade]
-  if (Math.random() > grade.successRate * luck) {
-    return { success: false, message: '炼制失败' }
+  const successRate = clamp(grade.successRate * Math.max(0, Number(luck) || 0), 0.05, 0.95)
+  const normalizedRoll = clamp(roll, 0, 0.999999)
+  if (normalizedRoll >= successRate) {
+    return { success: false, message: '炼制失败', successRate }
   }
-  return { success: true, message: '炼制成功' }
+  return { success: true, message: '炼制成功', successRate }
 }

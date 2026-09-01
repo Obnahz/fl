@@ -32,6 +32,14 @@ import {
   upgradeSect
 } from '../src/plugins/sect.js'
 
+test('sect shop reinforcement reward stays useful beside commissions', () => {
+  const bundle = SECT_SHOP_ITEMS.find(item => item.id === 'reinforce_bundle')
+  assert.deepEqual(
+    { cost: bundle.contributionCost, amount: bundle.reward.reinforceStones },
+    { cost: 60, amount: 15 }
+  )
+})
+
 test('sect catalog offers three distinct single-player growth choices', () => {
   assert.equal(SECTS.length, 3)
   assert.equal(new Set(SECTS.map(sect => sect.id)).size, 3)

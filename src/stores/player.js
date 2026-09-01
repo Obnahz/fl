@@ -1,11 +1,17 @@
 import { defineStore } from 'pinia'
 import { GameDB } from './db'
-import { pillRecipes, tryCreatePill, calculatePillEffect } from '../plugins/pills'
+import {
+  pillRecipes,
+  tryCreatePill,
+  calculatePillEffect,
+  normalizeActivePillEffects
+} from '../plugins/pills'
 import { encryptData, decryptData, validateData } from '../plugins/crypto'
 import { MAX_SAVE_BYTES } from '../plugins/saveLimits'
-import { getRealmName, getRealmLength } from '../plugins/realm'
+import { getRealmAttributeDelta, getRealmName, getRealmLength, migrateRealmAttributes } from '../plugins/realm'
 import {
   calculateBreakthroughOutcome,
+  calculateEffectiveProgressionRates,
   drawSpiritualRoot,
   getSpiritualRoot,
   normalizeCharacterName
@@ -111,6 +117,8 @@ const getSectChallengeEnemy = player => {
 export const usePlayerStore = defineStore('player', {
   state: () => ({
     saveVersion: SAVE_VERSION,
+    progressionVersion: 1,
+    realmAttributeLevel: 1,
     lastActiveAt: Date.now(),
     lastOfflineGain: 0,
     // 是否新玩家
@@ -304,10 +312,24 @@ export const usePlayerStore = defineStore('player', {
       return getActiveSectBonuses(this.sectState)
     },
     effectiveSpiritRate() {
-      return this.spiritRate * (this.activeSectBonuses.spiritRate || 1)
+      return calculateEffectiveProgressionRates({
+        spiritRate: this.spiritRate,
+        cultivationRate: this.cultivationRate,
+        level: this.level,
+        sectBonuses: this.activeSectBonuses,
+        equipmentBonuses: this.artifactBonuses,
+        activeEffects: this.activeEffects
+      }).spiritRate
     },
     effectiveCultivationRate() {
-      return this.cultivationRate * (this.activeSectBonuses.cultivationRate || 1)
+      return calculateEffectiveProgressionRates({
+        spiritRate: this.spiritRate,
+        cultivationRate: this.cultivationRate,
+        level: this.level,
+        sectBonuses: this.activeSectBonuses,
+        equipmentBonuses: this.artifactBonuses,
+        activeEffects: this.activeEffects
+      }).cultivationRate
     },
     effectiveAlchemyRate() {
       return this.alchemyRate * (this.activeSectBonuses.alchemySuccessRate || 1)
@@ -434,7 +456,16 @@ export const usePlayerStore = defineStore('player', {
     migrateSave(data) {
       const level = Math.min(getRealmLength(), Math.max(1, Number(data.level) || 1))
       const realm = getRealmName(level)
-      const maxHealth = Math.max(1, Number(data.baseAttributes?.health) || this.baseAttributes.health)
+      const recordedAttributeLevel = Math.min(level, Math.max(1, Number(data.realmAttributeLevel) || 1))
+      const migratedRealm = migrateRealmAttributes({
+        baseAttributes: data.baseAttributes,
+        defaultAttributes: this.baseAttributes,
+        currentHealth: data.currentHealth,
+        fromLevel: recordedAttributeLevel,
+        toLevel: level
+      })
+      const legacySpiritDivisor = data.progressionVersion >= 1 ? 1 : Math.pow(1.2, level - 1)
+      const spiritRate = Math.min(5, Math.max(0.5, (Number(data.spiritRate) || 1) / legacySpiritDivisor))
       const storedSkills = normalizeStoredSkillIds(data.unlockedSkills)
       const unlockedSkills = normalizeUnlockedTechniques(storedSkills).length
         ? storedSkills
@@ -471,7 +502,12 @@ export const usePlayerStore = defineStore('player', {
         level,
         realm: realm.name,
         maxCultivation: realm.maxCultivation,
-        currentHealth: Math.min(maxHealth, Math.max(0, Number(data.currentHealth ?? maxHealth) || 0)),
+        baseAttributes: migratedRealm.baseAttributes,
+        currentHealth: migratedRealm.currentHealth,
+        spiritRate,
+        progressionVersion: 1,
+        realmAttributeLevel: level,
+        activeEffects: normalizeActivePillEffects(data.activeEffects),
         equipmentPity: Math.min(8, Math.max(0, Math.floor(Number(data.equipmentPity) || 0))),
         equippedArtifacts: { ...this.equippedArtifacts, ...(data.equippedArtifacts || {}) },
         artifactBonuses: { ...this.artifactBonuses, ...(data.artifactBonuses || {}) },
@@ -522,7 +558,7 @@ export const usePlayerStore = defineStore('player', {
         spiritRate: this.effectiveSpiritRate
       })
       this.caveState = settled.state
-      this.lastOfflineGain = 0
+      this.lastOfflineGain = Number(settled.reward.spirit) || 0
       this.lastActiveAt = now
       this.saveData({ immediate: true })
       return settled
@@ -538,10 +574,6 @@ export const usePlayerStore = defineStore('player', {
     // 保存数据到IndexedDB
     async saveData({ immediate = false } = {}) {
       this.lastActiveAt = Date.now()
-      this.caveState = {
-        ...this.caveState,
-        lastSettledAt: this.lastActiveAt
-      }
       if (!immediate) {
         if (saveTimer) clearTimeout(saveTimer)
         saveTimer = setTimeout(() => this.saveData({ immediate: true }), 1500)
@@ -771,6 +803,10 @@ export const usePlayerStore = defineStore('player', {
       if (commissionId === 'challenge') {
         const enemy = getSectChallengeEnemy(this)
         if (!enemy) return { ...result, success: false, reason: 'challenge_unavailable' }
+        if (!this.payResourceCost(result.cost)) {
+          return { ...result, success: false, reason: 'insufficient_resources' }
+        }
+        this.sectOperationsState = result.state
         const technique = selectTechniqueForCombat(
           this.unlockedSkills,
           this.activeTechniqueId,
@@ -794,7 +830,6 @@ export const usePlayerStore = defineStore('player', {
         })
         combat = resolveAutoCombat({ player: linked.stats, enemy, technique, maxRounds: 20 })
         this.currentHealth = combat.playerHealthAfter
-        if (!this.payResourceCost(result.cost)) return { ...result, success: false, reason: 'insufficient_resources' }
         if (combat.outcome !== 'victory') {
           this.saveData({ immediate: true })
           return { ...result, success: false, reason: 'challenge_failed', combat }
@@ -1065,17 +1100,22 @@ export const usePlayerStore = defineStore('player', {
       if (this.level < realmsLength) {
         // 更新境界信息
         this.level += 1
+        const realmAttributeDelta = getRealmAttributeDelta(this.realmAttributeLevel, this.level)
         const nextRealm = getRealmName(this.level)
         this.realm = nextRealm.name // 使用完整的境界名称（如：练气一层）
         this.maxCultivation = nextRealm.maxCultivation
         this.breakthroughCount += 1 // 增加突破次数
+        Object.entries(realmAttributeDelta).forEach(([key, value]) => {
+          this.baseAttributes[key] += value
+        })
+        this.currentHealth = Math.min(this.baseAttributes.health, this.currentHealth + realmAttributeDelta.health)
+        this.realmAttributeLevel = this.level
         // 解锁新境界
         if (!this.unlockedRealms.includes(nextRealm.name)) {
           this.unlockedRealms.push(nextRealm.name)
         }
         // 突破奖励
         this.spirit += 100 * this.level // 获得灵力奖励
-        this.spiritRate *= 1.2 // 提升灵力获取倍率
         const settledGoal = this.settleStageGoal({ success: true, reason: `${this.stageStrategy.name}突破成功：${this.realm}`, settledAt: Date.now() })
         this.stageGoal = restartStageGoal(settledGoal, this.level, Date.now())
         this.saveData({ immediate: true })
@@ -1187,7 +1227,7 @@ export const usePlayerStore = defineStore('player', {
         this.pillsConsumed++
       }
       // 清理过期效果
-      this.activeEffects = this.activeEffects.filter(effect => effect.endTime > now)
+      this.activeEffects = normalizeActivePillEffects(this.activeEffects, now)
       this.saveData()
       return { success: true, message: '使用丹药成功' }
     },
@@ -1201,7 +1241,7 @@ export const usePlayerStore = defineStore('player', {
         this.herbs,
         this,
         this.pillFragments[recipe.id] || 0,
-        this.luck * this.alchemyRate
+        this.luck * this.effectiveAlchemyRate
       )
       if (result.success) {
         // 消耗材料
@@ -1473,7 +1513,7 @@ export const usePlayerStore = defineStore('player', {
           this.recordStagePreparation('alchemy', { amount: 1, action: `服用丹药：${item.name}` })
         }
         // 清理过期效果
-        this.activeEffects = this.activeEffects.filter(effect => effect.endTime > now)
+        this.activeEffects = normalizeActivePillEffects(this.activeEffects, now)
         this.saveData()
         return true
       }
@@ -1481,8 +1521,8 @@ export const usePlayerStore = defineStore('player', {
     },
     // 获取当前有效的丹药效果
     getActiveEffects() {
-      const now = Date.now()
-      return this.activeEffects.filter(effect => effect.endTime > now)
+      this.activeEffects = normalizeActivePillEffects(this.activeEffects)
+      return this.activeEffects
     },
     // 添加装备到背包
     addEquipment(equipment) {

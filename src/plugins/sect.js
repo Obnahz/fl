@@ -31,7 +31,7 @@ export const COMMISSION_DEFINITIONS = {
 export const SECT_SHOP_ITEMS = [
   { id: 'spirit_bundle', name: '\u805a\u7075\u6563', contributionCost: 25, purchaseLimit: 2, reward: { spirit: 300 } },
   { id: 'stone_pouch', name: '\u7075\u77f3\u888b', contributionCost: 35, purchaseLimit: 2, reward: { spiritStones: 100 } },
-  { id: 'reinforce_bundle', name: '\u953b\u5668\u77f3\u5323', contributionCost: 60, purchaseLimit: 1, reward: { reinforceStones: 10 } },
+  { id: 'reinforce_bundle', name: '\u953b\u5668\u77f3\u5323', contributionCost: 60, purchaseLimit: 1, reward: { reinforceStones: 15 } },
   { id: 'refinement_bundle', name: '\u6d17\u70bc\u77f3\u5323', contributionCost: 75, purchaseLimit: 1, reward: { refinementStones: 10 } }
 ]
 

@@ -46,8 +46,16 @@ export const buildDungeonPlayerCombatant = ({ player = {}, technique = null } = 
   const setBonuses = player.activeEquipmentSetBonuses || player.setBonuses || {}
   const pet = player.getPetBonus || {}
   const petAlreadyApplied = player.baseIncludesPet === true
-  const attributeBoost = (player.activeEffects || []).reduce((total, effect) => total + (effect?.type === 'allAttributes' ? getNumeric(effect.value) : 0), 0)
-  const combatBoost = (player.activeEffects || []).reduce((total, effect) => total + (effect?.type === 'combatBoost' ? getNumeric(effect.value) : 0), getNumeric(special.combatBoost))
+  const attributeBoost = clamp(
+    (player.activeEffects || []).reduce((total, effect) => total + (effect?.type === 'allAttributes' ? getNumeric(effect.value) : 0), 0),
+    0,
+    0.75
+  )
+  const combatBoost = clamp(
+    (player.activeEffects || []).reduce((total, effect) => total + (effect?.type === 'combatBoost' ? getNumeric(effect.value) : 0), getNumeric(special.combatBoost)),
+    0,
+    0.75
+  )
   const multiplier = 1 + attributeBoost
   const petBaseHealth = petAlreadyApplied ? 0 : getNumeric(pet.health)
   const petBaseAttack = petAlreadyApplied ? 0 : getNumeric(pet.attack)
@@ -63,9 +71,9 @@ export const buildDungeonPlayerCombatant = ({ player = {}, technique = null } = 
     speed: (getNumeric(base.speed) + getNumeric(setBonuses.speed) + petBaseSpeed) * multiplier,
     critRate: getNumeric(combat.critRate) + getNumeric(setBonuses.critRate) + (petAlreadyApplied ? 0 : getNumeric(pet.critRate)),
     dodgeRate: getNumeric(combat.dodgeRate) + getNumeric(setBonuses.dodgeRate) + (petAlreadyApplied ? 0 : getNumeric(pet.dodgeRate)),
-    combatBoost,
     ...resistance,
     ...special,
+    combatBoost,
     technique
   })
   stats.damage = stats.attack
@@ -82,17 +90,35 @@ export const calculateCombatHit = ({
 }) => {
   const source = normalizeCombatant(attacker)
   const target = normalizeCombatant(defender)
-  const isDodged = clampRoll(rolls.dodge) < target.dodgeRate
+  const sourceCombatBoost = Math.max(0, getNumeric(source.combatBoost))
+  const sourceResistanceBoost = Math.max(0, getNumeric(source.resistanceBoost))
+  const targetCombatBoost = Math.max(0, getNumeric(target.combatBoost))
+  const targetResistanceBoost = Math.max(0, getNumeric(target.resistanceBoost))
+  const dodgeChance = clamp(
+    target.dodgeRate * (1 + targetCombatBoost) - getNumeric(source.dodgeResist) * (1 + sourceResistanceBoost),
+    0,
+    0.95
+  )
+  const isDodged = clampRoll(rolls.dodge) < dodgeChance
   if (isDodged) return { damage: 0, isCritical: false, isDodged: true }
 
-  const criticalChance = clamp(source.critRate + clamp(critRateBonus, 0, 1), 0, 1)
+  const criticalChance = clamp(
+    (source.critRate + clamp(critRateBonus, 0, 1)) * (1 + sourceCombatBoost) -
+      getNumeric(target.critResist) * (1 + targetResistanceBoost),
+    0,
+    0.95
+  )
   const isCritical = clampRoll(rolls.crit) < criticalChance
   const variance = 0.9 + clampRoll(rolls.variance) * 0.2
-  const criticalMultiplier = isCritical ? 1.5 : 1
+  const criticalMultiplier = isCritical ? 1.5 + Math.max(0, getNumeric(source.critDamageBoost, 0.5)) : 1
   const multiplier = Math.max(0, Number(damageMultiplier) || 1)
   const penetration = clamp(armorPenetration, 0, 0.75)
-  const effectiveDefense = target.defense * (1 - penetration)
-  const mitigatedDamage = source.attack * variance * criticalMultiplier * multiplier * (100 / (100 + effectiveDefense))
+  const effectiveDefense = target.defense * (1 + targetCombatBoost) * (1 - penetration)
+  const criticalReduction = isCritical ? 1 - clamp(target.critDamageReduce, 0, 0.8) : 1
+  const finalBoost = 1 + Math.max(0, getNumeric(source.finalDamageBoost))
+  const finalReduction = 1 - clamp(target.finalDamageReduce, 0, 0.8)
+  const mitigatedDamage = source.attack * (1 + sourceCombatBoost) * variance * criticalMultiplier * multiplier *
+    (100 / (100 + effectiveDefense)) * criticalReduction * finalBoost * finalReduction
   const damage = Math.min(target.currentHealth, Math.max(1, Math.round(mitigatedDamage)))
   return { damage, isCritical, isDodged: false }
 }

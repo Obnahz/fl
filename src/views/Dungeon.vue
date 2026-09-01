@@ -296,12 +296,18 @@
   import { buildDungeonPlayerCombatant } from '../plugins/combatRules'
   import { selectTechniqueForCombat } from '../plugins/techniques'
   import { applySectRewardBonus } from '../plugins/sect'
-  import { getDungeonHighestFloorKey, getRandomOptions } from '../plugins/dungeon'
+  import {
+    getDungeonHighestFloorKey,
+    getDungeonRewardMultiplier,
+    getRandomOptions,
+    normalizeDungeonDifficulty
+  } from '../plugins/dungeon'
   import dungeonBuffs from '../plugins/dungeonBuffs'
   import { useMessage } from 'naive-ui'
   import LogPanel from '../components/LogPanel.vue'
 
   const playerStore = usePlayerStore()
+  playerStore.dungeonDifficulty = normalizeDungeonDifficulty(playerStore.dungeonDifficulty)
   const message = useMessage()
   const logRef = ref(null)
   const playerAttacking = ref(false)
@@ -370,7 +376,7 @@
     })
     const entity = new CombatEntity(playerStore.name, playerStore.level, {
       ...linked.stats,
-      health: linked.stats.maxHealth,
+      health: linked.stats.currentHealth,
       maxHealth: linked.stats.maxHealth,
       damage: linked.stats.damage
     }, playerStore.realm)
@@ -492,7 +498,7 @@
     // 记录失败层数
     playerStore.dungeonLastFailedFloor = dungeonState.value.floor
     // 随机跌落境界或修为
-    if (playerStore.dungeonDifficulty !== 100) {
+    if (playerStore.dungeonDifficulty !== 5) {
       // 损失一定修为值作为惩罚
       const cultivationLossRate = Math.random() * 0.4 + 0.1 // 随机10%到50%
       const cultivationLoss = Math.floor(playerStore.cultivation * cultivationLossRate)
@@ -605,7 +611,9 @@
   const generateRewards = () => {
     const rewards = []
     // 灵石奖励
-    const baseStones = 10 * dungeonState.value.floor * playerStore.dungeonDifficulty
+    const baseStones = Math.round(
+      10 * dungeonState.value.floor * getDungeonRewardMultiplier(playerStore.dungeonDifficulty)
+    )
     rewards.push(applySectRewardBonus({
       type: 'spirit_stones',
       amount: baseStones
@@ -629,20 +637,20 @@
     },
     {
       label: '困难',
-      value: 5
+      value: 3
     },
     {
       label: '地狱',
-      value: 10
+      value: 4
     },
     {
       label: '通天',
-      value: 100
+      value: 5
     }
   ]
 
   const handleUpdateValue = (value, option) => {
-    if (value === 100) {
+    if (value === 5) {
       message.warning('警告! 通天难度挑战失败后会跌落境界')
     }
   }

@@ -71,7 +71,12 @@
   import { BookOutline } from '@vicons/ionicons5'
   import LogPanel from '../components/LogPanel.vue'
   import DailyTasks from '../components/DailyTasks.vue'
-  import { calculateCultivationBatch, getBreakthroughChance } from '../plugins/gameRules'
+  import {
+    calculateCultivationBatch,
+    getBreakthroughChance,
+    getCultivationCost,
+    getCultivationGain
+  } from '../plugins/gameRules'
 
   const playerStore = usePlayerStore()
   const logRef = ref(null)
@@ -86,12 +91,12 @@
 
   // 计算当前境界的修炼消耗
   const getCurrentCultivationCost = () => {
-    return Math.floor(baseCultivationCost * Math.pow(1.5, playerStore.level - 1))
+    return getCultivationCost(playerStore.level, playerStore.maxCultivation)
   }
 
   // 计算当前境界的修炼获得
   const getCurrentCultivationGain = () => {
-    return Math.floor(baseCultivationGain * Math.pow(1.2, playerStore.level - 1))
+    return getCultivationGain(playerStore.level, playerStore.maxCultivation)
   }
 
   // 计算当前修炼消耗（作为计算属性）

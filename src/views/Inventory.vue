@@ -596,6 +596,7 @@
   import { getRealmName } from '../plugins/realm'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
   import {
+    applyReforgeStats,
     enhanceEquipment,
     getEnhanceCost,
     getEnhanceSuccessRate,
@@ -1053,7 +1054,7 @@
     if (!reforgeResult.value) return
     if (confirm) {
       // 用户确认后，应用新属性
-      selectedEquipment.value.stats = reforgeResult.value.newStats
+      applyReforgeStats(selectedEquipment.value, reforgeResult.value.newStats)
       playerStore.syncEquippedArtifactStats(selectedEquipment.value, reforgeResult.value.oldStats)
       message.success('已确认新属性')
     } else {

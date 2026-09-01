@@ -5,10 +5,10 @@ export const MARKET_REFRESH_COST = 120
 const MARKET_CATALOG = [
   { id: 'spirit_small', name: '聚灵散', description: '补充 300 点灵力。', price: 80, purchaseLimit: 2, reward: { spirit: 300 } },
   { id: 'spirit_large', name: '灵泉玉瓶', description: '补充 800 点灵力。', price: 180, purchaseLimit: 1, reward: { spirit: 800 } },
-  { id: 'reinforce_bundle', name: '强化石匣', description: '获得 10 枚强化石。', price: 120, purchaseLimit: 2, reward: { reinforceStones: 10 } },
+  { id: 'reinforce_bundle', name: '强化石匣', description: '获得 15 枚强化石。', price: 100, purchaseLimit: 2, reward: { reinforceStones: 15 } },
   { id: 'refinement_bundle', name: '洗炼石匣', description: '获得 10 枚洗炼石。', price: 120, purchaseLimit: 2, reward: { refinementStones: 10 } },
   { id: 'spirit_reserve', name: '凝气玉符', description: '获得 1500 点灵力，为下一次闭关准备。', price: 300, purchaseLimit: 1, reward: { spirit: 1500 } },
-  { id: 'reinforce_large', name: '百炼石箱', description: '获得 30 枚强化石。', price: 300, purchaseLimit: 1, reward: { reinforceStones: 30 } },
+  { id: 'reinforce_large', name: '百炼石箱', description: '获得 40 枚强化石。', price: 220, purchaseLimit: 1, reward: { reinforceStones: 40 } },
   { id: 'refinement_large', name: '天工石箱', description: '获得 30 枚洗炼石。', price: 300, purchaseLimit: 1, reward: { refinementStones: 30 } },
   { id: 'spirit_stones', name: '回灵玉髓', description: '获得 2500 点灵力，适合冲击境界。', price: 450, purchaseLimit: 1, reward: { spirit: 2500 } }
 ]

@@ -1,7 +1,7 @@
 // 装备强化和洗练相关配置
 
 // 强化等级配置
-const enhanceConfig = {
+const legacyEnhanceConfig = {
   maxLevel: 100, // 最大强化等级
   baseSuccessRate: 1, // 基础成功率
   costPerLevel: 10, // 每级消耗的强化石数量
@@ -9,6 +9,11 @@ const enhanceConfig = {
 }
 
 // 洗练配置
+const enhanceConfig = {
+  maxLevel: 20,
+  legacyStatIncrease: 0.1
+}
+
 const reforgeConfig = {
   costPerAttempt: 10, // 每次洗练消耗的洗练石数量
   minVariation: -0.3, // 最小属性变化（-30%）
@@ -33,13 +38,13 @@ const reforgeableStats = {
   artifact: ['attack', 'critRate', 'comboRate']
 }
 
-const getEnhanceCost = level => enhanceConfig.costPerLevel * (Math.max(0, Math.floor(Number(level) || 0)) + 1)
+const legacyGetEnhanceCost = level => legacyEnhanceConfig.costPerLevel * (Math.max(0, Math.floor(Number(level) || 0)) + 1)
 
-const getEnhanceSuccessRate = level =>
-  Math.max(0.05, enhanceConfig.baseSuccessRate - Math.max(0, Math.floor(Number(level) || 0)) * 0.05)
+const legacyGetEnhanceSuccessRate = level =>
+  Math.max(0.05, legacyEnhanceConfig.baseSuccessRate - Math.max(0, Math.floor(Number(level) || 0)) * 0.05)
 
 // 强化装备
-function enhanceEquipment(equipment, playerReinforceStones, roll = Math.random()) {
+function legacyEnhanceEquipment(equipment, playerReinforceStones, roll = Math.random()) {
   if (!equipment || !equipment.stats) {
     return { success: false, message: '无效的装备' }
   }
@@ -90,6 +95,115 @@ function enhanceEquipment(equipment, playerReinforceStones, roll = Math.random()
     oldStats,
     newStats: equipment.stats,
     newLevel: equipment.enhanceLevel
+  }
+}
+
+const normalizeEnhanceLevel = level => Math.max(0, Math.floor(Number(level) || 0))
+
+const getEnhanceCost = level => 3 + Math.floor(Math.min(enhanceConfig.maxLevel - 1, normalizeEnhanceLevel(level)) / 4) * 2
+
+const getEnhanceSuccessRate = level => {
+  const normalizedLevel = normalizeEnhanceLevel(level)
+  if (normalizedLevel < 5) return 1
+  if (normalizedLevel < 10) return 0.95
+  if (normalizedLevel < 15) return 0.85
+  return 0.7
+}
+
+const getEnhanceStatMultiplier = level => {
+  const normalizedLevel = Math.min(enhanceConfig.maxLevel, normalizeEnhanceLevel(level))
+  const earlyLevels = Math.min(10, normalizedLevel)
+  const lateLevels = Math.max(0, normalizedLevel - 10)
+  return Number((1 + earlyLevels * 0.05 + lateLevels * 0.03).toFixed(4))
+}
+
+const percentageStats = new Set([
+  'critRate',
+  'comboRate',
+  'counterRate',
+  'dodgeRate',
+  'critDamageBoost',
+  'critDamageReduce',
+  'vampireRate',
+  'stunResist',
+  'healBoost',
+  'finalDamageBoost',
+  'finalDamageReduce',
+  'combatBoost',
+  'resistanceBoost',
+  'spiritRate'
+])
+
+const roundEnhancedStat = (stat, value) => Number(value.toFixed(percentageStats.has(stat) ? 4 : 2))
+
+const getEnhanceBaseStats = (equipment, currentLevel) => {
+  if (equipment.enhanceBaseStats && typeof equipment.enhanceBaseStats === 'object') {
+    return Object.fromEntries(
+      Object.entries(equipment.enhanceBaseStats).filter(([, value]) => Number.isFinite(Number(value)))
+    )
+  }
+  const legacyMultiplier = currentLevel > 0
+    ? Math.pow(1 + enhanceConfig.legacyStatIncrease, currentLevel)
+    : 1
+  return Object.fromEntries(
+    Object.entries(equipment.stats)
+      .filter(([, value]) => Number.isFinite(Number(value)))
+      .map(([stat, value]) => [stat, Number(value) / legacyMultiplier])
+  )
+}
+
+function enhanceEquipment(equipment, playerReinforceStones, roll = Math.random()) {
+  if (!equipment || !equipment.stats) {
+    return { success: false, message: '无效的装备' }
+  }
+  const currentLevel = normalizeEnhanceLevel(equipment.enhanceLevel)
+  if (currentLevel >= enhanceConfig.maxLevel) {
+    return { success: false, message: '装备已达到最大强化等级' }
+  }
+  const cost = getEnhanceCost(currentLevel)
+  if (Number(playerReinforceStones) < cost) {
+    return { success: false, message: '强化石不足' }
+  }
+
+  const oldStats = { ...equipment.stats }
+  if (Number(roll) >= getEnhanceSuccessRate(currentLevel)) {
+    return {
+      success: false,
+      message: '强化失败',
+      cost,
+      oldStats,
+      newStats: { ...equipment.stats }
+    }
+  }
+
+  const baseStats = getEnhanceBaseStats(equipment, currentLevel)
+  const nextLevel = currentLevel + 1
+  const multiplier = getEnhanceStatMultiplier(nextLevel)
+  const nextStats = Object.fromEntries(
+    Object.entries(baseStats).map(([stat, value]) => [stat, roundEnhancedStat(stat, Number(value) * multiplier)])
+  )
+  equipment.enhanceBaseStats = { ...baseStats }
+  equipment.stats = nextStats
+  equipment.enhanceLevel = nextLevel
+
+  return {
+    success: true,
+    message: '强化成功',
+    cost,
+    oldStats,
+    newStats: nextStats,
+    newLevel: nextLevel
+  }
+}
+
+function applyReforgeStats(equipment, newStats) {
+  equipment.stats = { ...newStats }
+  const currentEnhanceLevel = normalizeEnhanceLevel(equipment.enhanceLevel)
+  if (currentEnhanceLevel > 0) {
+    const multiplier = getEnhanceStatMultiplier(currentEnhanceLevel)
+    equipment.enhanceBaseStats = Object.fromEntries(
+      Object.entries(newStats).map(([stat, value]) => [stat, Number(value) / multiplier])
+    )
   }
 }
 
@@ -157,7 +271,7 @@ function reforgeEquipment(equipment, playerSpiritStones, confirmNewStats = true)
     }
   }
   if (confirmNewStats) {
-    equipment.stats = { ...tempStats }
+    applyReforgeStats(equipment, tempStats)
   }
   return {
     success: true,
@@ -174,7 +288,9 @@ export {
   reforgeConfig,
   reforgeableStats,
   getEnhanceCost,
+  getEnhanceStatMultiplier,
   getEnhanceSuccessRate,
   enhanceEquipment,
+  applyReforgeStats,
   reforgeEquipment
 }

@@ -2,11 +2,21 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createMarketState,
+  getMarketCatalog,
   getMarketOffers,
   normalizeMarketState,
   purchaseMarketOffer,
   refreshMarket
 } from '../src/plugins/market.js'
+
+test('market enhancement bundles match the bounded upgrade economy', () => {
+  const catalog = getMarketCatalog()
+  const small = catalog.find(item => item.id === 'reinforce_bundle')
+  const large = catalog.find(item => item.id === 'reinforce_large')
+
+  assert.deepEqual({ price: small.price, amount: small.reward.reinforceStones }, { price: 100, amount: 15 })
+  assert.deepEqual({ price: large.price, amount: large.reward.reinforceStones }, { price: 220, amount: 40 })
+})
 
 test('market offers are deterministic for the same date', () => {
   const first = getMarketOffers(createMarketState('2026-08-29'), '2026-08-29').map(item => item.id)

@@ -73,15 +73,22 @@ const PERCENT_STATS = new Set([
 const SCORE_WEIGHTS = {
   attack: 5,
   defense: 4,
-  health: 0.35,
+  health: 0.4,
   speed: 3,
-  critRate: 180,
-  comboRate: 150,
-  counterRate: 140,
-  dodgeRate: 170,
-  critDamageBoost: 100,
-  critDamageReduce: 100,
-  spiritRate: 120
+  critRate: 120,
+  comboRate: 100,
+  counterRate: 90,
+  dodgeRate: 110,
+  critDamageBoost: 80,
+  critDamageReduce: 90,
+  vampireRate: 110,
+  stunResist: 55,
+  healBoost: 55,
+  finalDamageBoost: 100,
+  finalDamageReduce: 110,
+  combatBoost: 130,
+  resistanceBoost: 110,
+  spiritRate: 60
 }
 
 const clampRoll = value => (Number.isFinite(value) ? Math.min(0.999999, Math.max(0, value)) : Math.random())
@@ -143,7 +150,11 @@ export const createEquipmentDrop = ({ id, tier = 1, playerLevel = 1, rolls = {} 
 export const getEquipmentScore = equipment => {
   if (!equipment?.stats) return 0
   const score = Object.entries(equipment.stats).reduce(
-    (total, [stat, value]) => total + Math.max(0, Number(value) || 0) * (SCORE_WEIGHTS[stat] || 1),
+    (total, [stat, value]) => {
+      const numericValue = Number(value)
+      const weight = SCORE_WEIGHTS[stat]
+      return total + (weight && Number.isFinite(numericValue) && numericValue > 0 ? numericValue * weight : 0)
+    },
     0
   )
   return Math.round(score)

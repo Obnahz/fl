@@ -95,3 +95,57 @@ export const getRealmName = level => {
 export const getRealmLength = () => {
   return realms.length
 }
+
+const normalizeRealmLevel = level =>
+  Math.min(realms.length, Math.max(1, Math.floor(Number(level) || 1)))
+
+export const getRealmBaseAttributes = level => {
+  const completedLevels = normalizeRealmLevel(level) - 1
+  const completedMajorRealms = Math.floor(completedLevels / 9)
+  return {
+    attack: 10 + completedLevels * 2 + completedMajorRealms * 8,
+    health: 100 + completedLevels * 15 + completedMajorRealms * 60,
+    defense: 5 + completedLevels + completedMajorRealms * 4,
+    speed: 10 + Math.floor(completedLevels / 2) + completedMajorRealms * 2
+  }
+}
+
+export const getRealmAttributeDelta = (fromLevel, toLevel) => {
+  const from = getRealmBaseAttributes(fromLevel)
+  const to = getRealmBaseAttributes(toLevel)
+  return Object.fromEntries(Object.keys(to).map(key => [key, to[key] - from[key]]))
+}
+
+export const migrateRealmAttributes = ({
+  baseAttributes,
+  defaultAttributes,
+  currentHealth,
+  fromLevel = 1,
+  toLevel = 1
+}) => {
+  const defaults = defaultAttributes || getRealmBaseAttributes(1)
+  const delta = getRealmAttributeDelta(fromLevel, toLevel)
+  const migratedAttributes = Object.fromEntries(
+    Object.keys(defaults).map(key => [
+      key,
+      Math.max(0, (Number(baseAttributes?.[key]) || defaults[key]) + delta[key])
+    ])
+  )
+  const maxHealth = Math.max(1, migratedAttributes.health)
+  const storedHealth = currentHealth == null
+    ? maxHealth
+    : Math.max(0, Number(currentHealth) || 0)
+
+  return {
+    baseAttributes: migratedAttributes,
+    currentHealth: storedHealth === 0
+      ? 0
+      : Math.min(maxHealth, storedHealth + Math.max(0, delta.health))
+  }
+}
+
+export const getRealmProgressionMultiplier = level => {
+  const completedLevels = normalizeRealmLevel(level) - 1
+  const completedMajorRealms = Math.floor(completedLevels / 9)
+  return Math.min(5, 1 + completedLevels * 0.025 + completedMajorRealms * 0.05)
+}

@@ -1,9 +1,10 @@
 // 副本难度配置
 const difficultyModifiers = {
-  easy: { healthMod: 0.8, damageMod: 0.8, rewardMod: 0.8 },
-  normal: { healthMod: 1.0, damageMod: 1.0, rewardMod: 1.0 },
-  hard: { healthMod: 1.2, damageMod: 1.2, rewardMod: 1.5 },
-  expert: { healthMod: 1.5, damageMod: 1.5, rewardMod: 2.0 }
+  1: { healthMod: 1, damageMod: 1, rewardMod: 0.8 },
+  2: { healthMod: 1.22, damageMod: 1.22, rewardMod: 1 },
+  3: { healthMod: 1.44, damageMod: 1.44, rewardMod: 1.2 },
+  4: { healthMod: 1.66, damageMod: 1.66, rewardMod: 1.45 },
+  5: { healthMod: 1.88, damageMod: 1.88, rewardMod: 1.75 }
 }
 
 // 随机选项池
@@ -227,11 +228,20 @@ const roguelikeOptions = {
 }
 
 export const getDungeonHighestFloorKey = difficulty => {
-  const normalized = Number(difficulty)
-  if (normalized === 2 || normalized === 5 || normalized === 10 || normalized === 100) {
-    return `dungeonHighestFloor_${normalized}`
-  }
-  return 'dungeonHighestFloor'
+  const legacyBuckets = [null, '', '_2', '_5', '_10', '_100']
+  const normalized = normalizeDungeonDifficulty(difficulty)
+  return `dungeonHighestFloor${legacyBuckets[normalized]}`
+}
+
+export const normalizeDungeonDifficulty = difficulty => {
+  const numeric = Math.round(Number(difficulty) || 1)
+  if (numeric === 10) return 4
+  if (numeric === 100) return 5
+  return Math.min(5, Math.max(1, numeric))
+}
+
+export const getDungeonRewardMultiplier = difficulty => {
+  return [0, 0.8, 1, 1.2, 1.45, 1.75][normalizeDungeonDifficulty(difficulty)]
 }
 
 // 获取随机选项

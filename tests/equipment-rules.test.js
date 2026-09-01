@@ -14,6 +14,23 @@ import {
   getEquipmentPityAfter
 } from '../src/plugins/equipmentRules.js'
 
+test('equipment score ignores unknown, negative and non-finite affixes', () => {
+  const valid = getEquipmentScore({ stats: { attack: 10, critRate: 0.05 } })
+  const polluted = getEquipmentScore({
+    stats: { attack: 10, critRate: 0.05, imaginaryPower: 999999, defense: -10, health: Infinity }
+  })
+
+  assert.equal(polluted, valid)
+})
+
+test('equipment score gives comparable value to distinct viable builds', () => {
+  const offense = getEquipmentScore({ stats: { attack: 10, critRate: 0.05 } })
+  const defense = getEquipmentScore({ stats: { defense: 10, health: 40 } })
+  const tempo = getEquipmentScore({ stats: { speed: 8, dodgeRate: 0.2 } })
+
+  assert.ok(Math.max(offense, defense, tempo) / Math.min(offense, defense, tempo) < 1.35)
+})
+
 const fixedRolls = {
   slot: 0,
   quality: 0,

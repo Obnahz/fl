@@ -104,7 +104,10 @@ export const settleCaveOffline = (state, { now = Date.now(), spiritRate = 1 } = 
     CAVE_OFFLINE_CAP_SECONDS,
     Math.max(0, Math.floor(elapsedMilliseconds / 1000))
   )
-  if (elapsedSeconds === 0) return { state: next, reward: {}, elapsedSeconds: 0 }
+  const capped = elapsedMilliseconds > CAVE_OFFLINE_CAP_SECONDS * 1000
+  if (elapsedSeconds === 0) {
+    return { state: next, reward: {}, elapsedSeconds: 0, checkedAt, capped: false }
+  }
 
   const settledAt = elapsedMilliseconds >= CAVE_OFFLINE_CAP_SECONDS * 1000
     ? checkedAt
@@ -138,7 +141,9 @@ export const settleCaveOffline = (state, { now = Date.now(), spiritRate = 1 } = 
       }
     },
     reward,
-    elapsedSeconds
+    elapsedSeconds,
+    checkedAt,
+    capped
   }
 }
 

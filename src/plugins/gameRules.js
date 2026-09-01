@@ -1,3 +1,6 @@
+import { getActivePillBonuses } from './pills.js'
+import { getRealmProgressionMultiplier } from './realm.js'
+
 export const SPIRITUAL_ROOTS = [
   {
     id: 'metal',
@@ -116,11 +119,43 @@ const BASE_CULTIVATION_COST = 10
 const BASE_CULTIVATION_GAIN = 1
 const EXTRA_CULTIVATION_CHANCE = 0.3
 
-const getCultivationCost = level =>
-  Math.floor(BASE_CULTIVATION_COST * Math.pow(1.5, Math.max(0, Number(level) - 1)))
+export const getCultivationCost = (level, maxCultivation = 100) => {
+  const normalizedLevel = Math.max(1, Math.floor(Number(level) || 1))
+  const cultivationScale = Math.sqrt(Math.max(100, Number(maxCultivation) || 100))
+  return Math.ceil(BASE_CULTIVATION_COST + (normalizedLevel - 1) * 3 + cultivationScale * 0.08 - 0.8)
+}
 
-const getCultivationGain = level =>
-  Math.floor(BASE_CULTIVATION_GAIN * Math.pow(1.2, Math.max(0, Number(level) - 1)))
+export const getCultivationGain = (level, maxCultivation = 100) => {
+  const normalizedLevel = Math.max(1, Math.floor(Number(level) || 1))
+  const majorRealm = Math.floor((normalizedLevel - 1) / 9)
+  const targetAttempts = Math.max(72, 100 - majorRealm * 2)
+  return Math.max(BASE_CULTIVATION_GAIN, Math.ceil(Math.max(1, Number(maxCultivation) || 1) / targetAttempts))
+}
+
+export const calculateEffectiveProgressionRates = ({
+  spiritRate = 1,
+  cultivationRate = 1,
+  level = 1,
+  sectBonuses = {},
+  equipmentBonuses = {},
+  activeEffects = [],
+  now = Date.now()
+} = {}) => {
+  const pillBonuses = getActivePillBonuses(activeEffects, now)
+  const realmMultiplier = getRealmProgressionMultiplier(level)
+  const pillCultivationBonus = (Number(pillBonuses.cultivationRate) || 0) +
+    (Number(pillBonuses.cultivationEfficiency) || 0)
+  return {
+    spiritRate: Math.min(8, Math.max(0, Number(spiritRate) || 0) *
+      Math.max(0, Number(sectBonuses.spiritRate) || 1) *
+      Math.max(0, Number(equipmentBonuses.spiritRate) || 1) *
+      (1 + Math.min(1.5, Math.max(0, Number(pillBonuses.spiritRate) || 0))) * realmMultiplier),
+    cultivationRate: Math.min(5, Math.max(0, Number(cultivationRate) || 0) *
+      Math.max(0, Number(sectBonuses.cultivationRate) || 1) *
+      Math.max(0, Number(equipmentBonuses.cultivationRate) || 1) *
+      (1 + Math.min(2, Math.max(0, pillCultivationBonus))))
+  }
+}
 
 export const calculateCultivationBatch = ({
   level = 1,
@@ -134,8 +169,8 @@ export const calculateCultivationBatch = ({
   const currentSpirit = Math.max(0, Number(spirit) || 0)
   const currentCultivation = Math.max(0, Number(cultivation) || 0)
   const cultivationLimit = Math.max(0, Number(maxCultivation) || 0)
-  const baseGain = getCultivationGain(level)
-  const costPerAttempt = getCultivationCost(level)
+  const baseGain = getCultivationGain(level, cultivationLimit)
+  const costPerAttempt = getCultivationCost(level, cultivationLimit)
   const effectiveRate = Math.max(0, Number(effectiveCultivationRate) || 0)
   const gainPerAttempt = baseGain * effectiveRate
   const remainingCultivation = Math.max(0, cultivationLimit - currentCultivation)

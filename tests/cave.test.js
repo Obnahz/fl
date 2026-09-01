@@ -79,10 +79,23 @@ test('spirit array settles capped offline time into a pending reward without gra
   })
 
   assert.equal(first.elapsedSeconds, CAVE_OFFLINE_CAP_SECONDS)
+  assert.equal(first.capped, true)
+  assert.equal(first.checkedAt, afterTwelveHours)
   assert.deepEqual(first.reward, { spirit: CAVE_OFFLINE_CAP_SECONDS * 2 })
   assert.deepEqual(first.state.pendingReward, { spirit: CAVE_OFFLINE_CAP_SECONDS * 2, reinforceStones: 0 })
   assert.deepEqual(duplicate.reward, {})
   assert.deepEqual(duplicate.state.pendingReward, { spirit: CAVE_OFFLINE_CAP_SECONDS * 2, reinforceStones: 0 })
+})
+
+test('offline settlement rejects corrupted production multipliers', () => {
+  const startedAt = 1_000
+  const result = settleCaveOffline(createCaveState(startedAt), {
+    now: startedAt + 1_000,
+    spiritRate: Infinity
+  })
+
+  assert.deepEqual(result.reward, { spirit: 1 })
+  assert.equal(result.capped, false)
 })
 
 test('frequent settlements preserve sub-second elapsed time', () => {

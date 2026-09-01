@@ -3,10 +3,19 @@ import assert from 'node:assert/strict'
 
 import {
   calculateCultivationBatch,
+  calculateEffectiveProgressionRates,
   calculateBreakthroughOutcome,
   drawSpiritualRoot,
+  getCultivationCost,
+  getCultivationGain,
   normalizeCharacterName
 } from '../src/plugins/gameRules.js'
+import { calculatePillEffect, getActivePillBonuses, pillRecipes, tryCreatePill } from '../src/plugins/pills.js'
+import {
+  getRealmAttributeDelta,
+  getRealmBaseAttributes,
+  migrateRealmAttributes
+} from '../src/plugins/realm.js'
 
 test('批量修炼会按有效倍率只计算一次并支持固定随机值', () => {
   const result = calculateCultivationBatch({
@@ -21,10 +30,106 @@ test('批量修炼会按有效倍率只计算一次并支持固定随机值', ()
 
   assert.equal(result.valid, true)
   assert.equal(result.times, 80)
-  assert.equal(result.totalCost, 1200)
+  assert.equal(result.totalCost, 1040)
   assert.equal(result.rawCultivationGain, 80)
   assert.equal(result.cultivationGain, 100)
   assert.equal(result.doubleGainTimes, 0)
+})
+
+test('修炼消耗与收益随境界平滑成长而不会指数断档', () => {
+  const earlyCost = getCultivationCost(9, 900)
+  const nextRealmCost = getCultivationCost(10, 1000)
+  const lateCost = getCultivationCost(90, 16_000_000)
+
+  assert.ok(nextRealmCost > earlyCost)
+  assert.ok(nextRealmCost / earlyCost < 1.25)
+  assert.ok(lateCost < 2_000)
+  assert.ok(getCultivationGain(90, 16_000_000) > getCultivationGain(10, 1000))
+})
+
+test('境界成长提供稳定基础属性并可按等级差量迁移旧存档', () => {
+  const first = getRealmBaseAttributes(1)
+  const foundation = getRealmBaseAttributes(10)
+  const delta = getRealmAttributeDelta(1, 10)
+
+  assert.deepEqual(first, { attack: 10, health: 100, defense: 5, speed: 10 })
+  assert.ok(foundation.attack >= 30)
+  assert.ok(foundation.health >= 250)
+  assert.deepEqual(delta, {
+    attack: foundation.attack - first.attack,
+    health: foundation.health - first.health,
+    defense: foundation.defense - first.defense,
+    speed: foundation.speed - first.speed
+  })
+})
+
+test('40级旧存档只迁移一次境界属性并保留零生命状态', () => {
+  const legacyAttributes = { attack: 154, health: 830, defense: 168, speed: 85 }
+  const first = migrateRealmAttributes({
+    baseAttributes: legacyAttributes,
+    defaultAttributes: getRealmBaseAttributes(1),
+    currentHealth: 0,
+    fromLevel: 1,
+    toLevel: 40
+  })
+  const second = migrateRealmAttributes({
+    baseAttributes: first.baseAttributes,
+    defaultAttributes: getRealmBaseAttributes(1),
+    currentHealth: first.currentHealth,
+    fromLevel: 40,
+    toLevel: 40
+  })
+
+  assert.deepEqual(first.baseAttributes, {
+    attack: 264,
+    health: 1655,
+    defense: 223,
+    speed: 112
+  })
+  assert.equal(first.currentHealth, 0)
+  assert.deepEqual(second, first)
+})
+
+test('最终吐纳和修炼倍率组合宗门、装备与未过期丹药并执行上限', () => {
+  const now = 10_000
+  const rates = calculateEffectiveProgressionRates({
+    spiritRate: 1.2,
+    cultivationRate: 1.1,
+    level: 10,
+    sectBonuses: { spiritRate: 1.1, cultivationRate: 1.2 },
+    equipmentBonuses: { spiritRate: 1.25, cultivationRate: 1.3 },
+    activeEffects: [
+      { type: 'spiritRate', value: 0.5, endTime: now + 1 },
+      { type: 'cultivationRate', value: 0.6, endTime: now + 1 },
+      { type: 'cultivationEfficiency', value: 0.4, endTime: now + 1 },
+      { type: 'spiritRate', value: 99, endTime: now - 1 }
+    ],
+    now
+  })
+
+  assert.ok(rates.spiritRate > 2)
+  assert.ok(rates.cultivationRate > 3)
+  assert.ok(rates.spiritRate <= 8)
+  assert.ok(rates.cultivationRate <= 5)
+})
+
+test('丹药效果、有效期和炼制概率都有明确边界', () => {
+  const recipe = pillRecipes.find(item => item.id === 'celestial_essence_pill')
+  const effect = calculatePillEffect(recipe, 999)
+  const now = 20_000
+  const bonuses = getActivePillBonuses([
+    { type: 'cultivationRate', value: effect.value, endTime: now + 1 },
+    { type: 'cultivationRate', value: 999, endTime: now - 1 }
+  ], now)
+  const herbs = recipe.materials.flatMap(material =>
+    Array.from({ length: material.count }, () => ({ id: material.herb }))
+  )
+  const player = { pillRecipes: [recipe.id] }
+
+  assert.ok(effect.value <= 1.5)
+  assert.equal(bonuses.cultivationRate, effect.value)
+  assert.equal(tryCreatePill(recipe, herbs, player, 0, 999, 0.96).success, false)
+  assert.equal(tryCreatePill(recipe, herbs, player, 0, 999, 0.94).success, true)
 })
 
 test('批量修炼在灵力差一点时返回可读的不足结果且不产生收益', () => {
