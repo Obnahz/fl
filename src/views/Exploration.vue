@@ -236,6 +236,7 @@
     pendingExploration.value = null
     isResolving.value = false
     playerStore.explorationCount++
+    playerStore.recordTaskEvent('exploration')
     playerStore.equipmentPity = result.equipmentPityAfter ?? playerStore.equipmentPity
 
     if (result.kind === 'combat') {
@@ -246,7 +247,7 @@
 
       if (result.outcome === 'victory') {
         showMessage('success', `[斩妖]击败${result.enemy.name}，历经${result.rounds}回合，损失${healthBefore - playerStore.currentHealth}点气血。`)
-        result.rewards.forEach(reward => handleReward(reward, playerStore, showMessage))
+        result.rewards.forEach(reward => handleReward(reward, playerStore, showMessage, { source: 'exploration_combat' }))
       } else {
         stopAllExploration()
         const reason = result.outcome === 'round_limit' ? '久战未决，只得暂退' : '不敌妖兽，负伤退走'
@@ -271,8 +272,8 @@
       }
     } else if (result.kind === 'special') {
       showMessage('info', `[${result.name}]${result.description}`)
-      handleReward(result.reward, playerStore, showMessage)
-      if (result.bonusReward) handleReward(result.bonusReward, playerStore, showMessage)
+      handleReward(result.reward, playerStore, showMessage, { source: 'exploration' })
+      if (result.bonusReward) handleReward(result.bonusReward, playerStore, showMessage, { source: 'exploration' })
       if (result.heal > 0) {
         const healed = playerStore.heal(result.heal)
         if (healed > 0) showMessage('success', `[灵泉洗脉]恢复${healed}点气血`)
@@ -281,7 +282,7 @@
     } else if (result.kind === 'reward') {
       if (result.multiplier > 1) showMessage('success', '福缘加持，本次收获提升五成。')
       if (result.guaranteed) showMessage('success', '装备机缘圆满，本次普通收获触发保底。')
-      handleReward(result.reward, playerStore, showMessage)
+      handleReward(result.reward, playerStore, showMessage, { source: 'exploration' })
     }
     playerStore.saveData()
   }
@@ -300,6 +301,12 @@
     const requestId = `${Date.now()}_${location.id}`
     const spiritBefore = playerStore.spirit
     playerStore.spirit -= location.spiritCost
+    playerStore.recordStagePreparation('exploration', {
+      amount: 1,
+      cost: location.spiritCost,
+      risk: Number(location.danger || location.dangerRate || 0),
+      action: `探索：${location.name}`
+    })
     pendingExploration.value = { requestId, locationId: location.id, spiritCost: location.spiritCost }
     isResolving.value = true
     explorationWorker.value.postMessage({

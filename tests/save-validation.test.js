@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { validateData } from '../src/plugins/crypto.js'
+import { MAX_SAVE_BYTES } from '../src/plugins/saveLimits.js'
 
 const validSave = {
   saveVersion: 3,
@@ -19,6 +20,11 @@ const validSave = {
 
 test('结构完整的存档可以通过校验', () => {
   assert.equal(validateData(validSave), true)
+})
+
+test('新版存档导入上限可容纳 1.0.5 大型存档', () => {
+  assert.equal(MAX_SAVE_BYTES, 8 * 1024 * 1024)
+  assert.ok(4_346_668 < MAX_SAVE_BYTES)
 })
 
 test('拒绝非对象与关键嵌套字段为空的存档', () => {
@@ -64,4 +70,25 @@ test('第五版功法养成字段必须使用合法的纯数据结构', () => {
   assert.equal(validateData({ ...progressSave, techniqueLevels: [] }), false)
   assert.equal(validateData({ ...progressSave, techniqueFragments: { spirit_edge: -1 } }), false)
   assert.equal(validateData({ ...progressSave, techniqueFragments: { spirit_edge: 1.5 } }), false)
+})
+
+test('第六版每日任务字段可以安全校验，旧存档仍可省略该字段', () => {
+  assert.equal(validateData({ ...validSave, saveVersion: 6 }), true)
+  assert.equal(validateData({ ...validSave, saveVersion: 10 }), false)
+  assert.equal(validateData({ ...validSave, dailyState: null }), true)
+})
+
+test('第七版宗门字段允许旧存档迁移并拒绝未来版本', () => {
+  assert.equal(validateData({ ...validSave, saveVersion: 7 }), true)
+  assert.equal(validateData({ ...validSave, saveVersion: 10 }), false)
+})
+
+test('第八版宗门委托字段可进入迁移流程并拒绝未来版本', () => {
+  assert.equal(validateData({ ...validSave, saveVersion: 8 }), true)
+  assert.equal(validateData({ ...validSave, saveVersion: 10 }), false)
+})
+
+test('第九版洞府值守字段可进入迁移流程并拒绝未来版本', () => {
+  assert.equal(validateData({ ...validSave, saveVersion: 9 }), true)
+  assert.equal(validateData({ ...validSave, saveVersion: 10 }), false)
 })

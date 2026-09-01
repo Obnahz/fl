@@ -66,8 +66,8 @@
                         <n-descriptions-item label="攻击">{{ playerStore.baseAttributes.attack.toFixed(0) }}</n-descriptions-item>
                         <n-descriptions-item label="防御">{{ playerStore.baseAttributes.defense.toFixed(0) }}</n-descriptions-item>
                         <n-descriptions-item label="速度">{{ playerStore.baseAttributes.speed.toFixed(0) }}</n-descriptions-item>
-                        <n-descriptions-item label="修炼效率">{{ rateText(playerStore.cultivationRate) }}</n-descriptions-item>
-                        <n-descriptions-item label="吐纳效率">{{ rateText(playerStore.spiritRate) }}</n-descriptions-item>
+                        <n-descriptions-item label="修炼效率">{{ rateText(playerStore.effectiveCultivationRate) }}</n-descriptions-item>
+                        <n-descriptions-item label="吐纳效率">{{ rateText(playerStore.effectiveSpiritRate) }}</n-descriptions-item>
                         <n-descriptions-item label="福缘">{{ rateText(playerStore.luck) }}</n-descriptions-item>
                         <n-descriptions-item label="强化石">{{ playerStore.reinforceStones }}</n-descriptions-item>
                       </n-descriptions>
@@ -77,6 +77,29 @@
                   <n-alert v-if="playerStore.lastOfflineGain > 0" type="success" :show-icon="true">
                     闭关归来，获得 {{ playerStore.lastOfflineGain }} 点离线灵力。
                   </n-alert>
+                </section>
+
+                <section v-if="!playerStore.isNewPlayer" class="stage-goal-panel" aria-label="当前阶段目标">
+                  <div class="stage-goal-heading">
+                    <div>
+                      <span class="stage-goal-kicker">当前阶段</span>
+                      <h2>为下一次突破做准备</h2>
+                    </div>
+                    <strong>{{ playerStore.stageGoalProgress }}%</strong>
+                  </div>
+                  <n-progress :percentage="playerStore.stageGoalProgress" :show-indicator="false" color="#bd9855" />
+                  <div class="stage-goal-meta">
+                    <span>最近行动：{{ playerStore.stageGoal?.lastAction || '尚未开始准备' }}</span>
+                    <span>当前路线：{{ playerStore.stageStrategy.name }}</span>
+                    <span v-if="playerStore.stageOutcomeSummary">
+                      上次结果：{{ playerStore.stageOutcomeSummary.success ? '成功' : '失败' }}，{{ playerStore.stageOutcomeSummary.reason }}
+                    </span>
+                  </div>
+                  <div class="stage-goal-preparations">
+                    <span v-for="item in stagePreparationLabels" :key="item.key" :class="{ active: playerStore.stageGoal?.preparations?.[item.key] > 0 }">
+                      {{ item.label }}
+                    </span>
+                  </div>
                 </section>
 
                 <router-view />
@@ -94,18 +117,26 @@
   import { useRoute, useRouter } from 'vue-router'
   import { NIcon, darkTheme } from 'naive-ui'
   import {
+    BankOutlined,
     BookOutlined,
+    CalendarOutlined,
     CompassOutlined,
     ExperimentOutlined,
+    GiftOutlined,
+    HomeOutlined,
+    InboxOutlined,
     ReadOutlined,
+    ShopOutlined,
     SettingOutlined,
-    SmileOutlined
+    SmileOutlined,
+    TrophyOutlined
   } from '@ant-design/icons-vue'
   import { Moon, Sunny } from '@vicons/ionicons5'
   import iconImage from './assets/tianmi-icon.png'
   import landscapeImage from './assets/xiuxian-landscape.webp'
   import { getRealmName } from './plugins/realm'
   import { getSpiritualRoot } from './plugins/gameRules'
+  import { STAGE_PREPARATION_KEYS } from './plugins/stageGoals'
   import { usePlayerStore } from './stores/player'
 
   const router = useRouter()
@@ -119,10 +150,17 @@
   const renderIcon = icon => () => h(NIcon, null, { default: () => h(icon) })
 
   const menuOptions = computed(() => [
+    { label: '今日', key: 'tasks', icon: renderIcon(CalendarOutlined) },
     { label: '修炼', key: 'cultivation', icon: renderIcon(BookOutlined) },
     { label: '功法', key: 'techniques', icon: renderIcon(ReadOutlined) },
-    { label: '行囊', key: 'inventory', icon: renderIcon(ExperimentOutlined) },
+    { label: '炼丹', key: 'alchemy', icon: renderIcon(ExperimentOutlined) },
+    { label: '宗门', key: 'sect', icon: renderIcon(BankOutlined) },
+    { label: '洞府', key: 'cave', icon: renderIcon(HomeOutlined) },
+    { label: '行囊', key: 'inventory', icon: renderIcon(InboxOutlined) },
     { label: '历练', key: 'exploration', icon: renderIcon(CompassOutlined) },
+    { label: '秘境', key: 'dungeon', icon: renderIcon(GiftOutlined) },
+    { label: '坊市', key: 'market', icon: renderIcon(ShopOutlined) },
+    { label: '成就', key: 'achievements', icon: renderIcon(TrophyOutlined) },
     { label: '设置', key: 'settings', icon: renderIcon(SettingOutlined) },
     ...(playerStore.isGMMode ? [{ label: 'GM调试', key: 'gm', icon: renderIcon(SmileOutlined) }] : [])
   ])
@@ -134,6 +172,18 @@
     return Math.min(100, Number(((playerStore.cultivation / playerStore.maxCultivation) * 100).toFixed(2)))
   })
   const attributeColumns = computed(() => (viewportWidth.value < 640 ? 1 : 4))
+  const stagePreparationLabels = STAGE_PREPARATION_KEYS.map(key => ({
+    key,
+    label: {
+      cultivation: '修炼',
+      exploration: '探索',
+      alchemy: '炼丹',
+      equipment: '装备',
+      sect: '宗门',
+      cave: '洞府',
+      dungeon: '秘境'
+    }[key]
+  }))
 
   const formatNumber = value => Number(value || 0).toFixed(Number.isInteger(value) ? 0 : 1)
   const rateText = value => `${Math.round(Number(value || 1) * 100)}%`
@@ -225,6 +275,46 @@
   ::selection { color: var(--surface); background: var(--jade-deep); }
 
   .app-shell, .n-config-provider, .n-layout { min-height: 100dvh; }
+
+  .stage-goal-panel {
+    display: grid;
+    gap: 10px;
+    margin: 16px auto 0;
+    width: min(100%, 1400px);
+    padding: 16px 20px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface) 92%, var(--jade-pale));
+  }
+
+  .stage-goal-heading,
+  .stage-goal-meta,
+  .stage-goal-preparations {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .stage-goal-kicker { color: var(--muted); font-size: 12px; }
+  .stage-goal-heading h2 { margin-top: 2px; font-size: 18px; }
+  .stage-goal-heading strong { color: var(--jade-deep); font-size: 20px; }
+  .stage-goal-meta { flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+  .stage-goal-preparations { justify-content: flex-start; flex-wrap: wrap; }
+  .stage-goal-preparations span {
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .stage-goal-preparations span.active { border-color: var(--gold); color: var(--jade-deep); background: var(--jade-pale); }
+
+  @media (max-width: 560px) {
+    .stage-goal-panel { padding: 14px; }
+    .stage-goal-heading { align-items: flex-start; }
+    .stage-goal-meta { display: grid; justify-content: start; }
+  }
   .app-shell { position: relative; isolation: isolate; overflow: clip; background: var(--paper); }
   .app-shell::before {
     position: fixed;
@@ -369,6 +459,136 @@
 </style>
 
 <style>
+  /* Phase 1 visual world: 云海夜航图 */
+  :root {
+    --ink-night: #0b1715;
+    --mountain-deep: #123a32;
+    --jade: #2c8068;
+    --mist-jade: #9dbaa7;
+    --moon-paper: #e7e0ce;
+    --lacquer: #172522;
+    --star-gold: #c8a15a;
+    --cinnabar: #b54b3c;
+    --ink: #16201e;
+    --ink-muted: #65766c;
+    --surface-border: rgba(33, 72, 59, .28);
+    --focus-ring: rgba(200, 161, 90, .92);
+  }
+
+  html.dark {
+    --paper: var(--ink-night);
+    --surface: rgba(18, 36, 31, .96);
+    --surface-solid: #12241f;
+    --ink: #f3efdf;
+    --ink-muted: #b7c7b8;
+    --surface-border: rgba(189, 215, 196, .2);
+  }
+
+  html, body, #app { min-width: 320px; background: var(--paper); }
+  body { color: var(--ink); }
+  ::selection { color: var(--moon-paper); background: var(--mountain-deep); }
+
+  .app-shell {
+    position: relative;
+    isolation: isolate;
+    overflow: clip;
+    background: var(--paper);
+  }
+
+  .app-shell::before {
+    background-position: center 24%;
+    background-size: cover;
+    filter: saturate(.82) contrast(1.06) brightness(.88);
+    opacity: .9;
+  }
+
+  .app-shell::after {
+    background: rgba(8, 29, 24, .28);
+    mix-blend-mode: multiply;
+  }
+
+  html:not(.dark) .app-shell::after { background: rgba(226, 222, 202, .36); mix-blend-mode: normal; }
+  html.dark .app-shell::before { opacity: .38; filter: saturate(.76) contrast(1.12) brightness(.58); }
+  html.dark .app-shell::after { background: rgba(4, 16, 13, .54); }
+
+  .site-header {
+    background: rgba(8, 27, 22, .94) !important;
+    border-bottom: 1px solid rgba(200, 161, 90, .38) !important;
+    box-shadow: 0 12px 32px rgba(2, 12, 9, .32);
+    backdrop-filter: blur(14px) saturate(115%);
+    -webkit-backdrop-filter: blur(14px) saturate(115%);
+  }
+
+  .header-content, .content-wrapper { width: min(100%, 1440px); }
+  .content-wrapper { padding-top: clamp(1.1rem, 2.5vw, 2rem); }
+  .brand-title { color: #f3efdf; letter-spacing: .12em; text-shadow: 0 2px 14px rgba(0, 0, 0, .3); }
+  .brand-sigil { border-radius: 50%; border-color: rgba(200, 161, 90, .72); box-shadow: 0 0 0 3px rgba(200, 161, 90, .12), 0 8px 20px rgba(0, 0, 0, .32); }
+
+  .n-menu.n-menu--horizontal .n-menu-item-content {
+    min-height: 46px;
+    color: #b7c7b8 !important;
+    transition: color 160ms ease, background-color 160ms ease;
+  }
+
+  .n-menu.n-menu--horizontal .n-menu-item-content:hover { background: rgba(200, 161, 90, .08); color: #f3efdf !important; }
+  .n-menu.n-menu--horizontal .n-menu-item-content--selected { color: #f6df9c !important; }
+  .n-menu.n-menu--horizontal .n-menu-item-content--selected::after { right: .8rem; left: .8rem; height: 2px; background: var(--star-gold); box-shadow: 0 0 12px rgba(200, 161, 90, .42); }
+
+  .status-band {
+    margin-bottom: 1.25rem;
+    border: 1px solid rgba(200, 161, 90, .32);
+    border-radius: 8px;
+    background: rgba(16, 54, 45, .95);
+    box-shadow: 0 18px 38px rgba(6, 25, 18, .24), inset 0 1px 0 rgba(255, 255, 255, .08);
+    backdrop-filter: blur(12px) saturate(115%);
+    -webkit-backdrop-filter: blur(12px) saturate(115%);
+  }
+
+  .status-band::before { right: 1.25rem; left: 1.25rem; height: 1px; background: var(--star-gold); opacity: .86; }
+  .status-band::after { top: .5rem; right: .55rem; width: 4.25rem; height: 4.25rem; border-color: rgba(200, 161, 90, .3); }
+  .status-item { border-right-color: rgba(218, 231, 214, .18); }
+  .status-item span { color: var(--mist-jade); }
+  .status-item strong { color: #f3efdf; font-variant-numeric: tabular-nums; }
+  .n-progress .n-progress-graph-line-rail { background: rgba(231, 224, 206, .16) !important; }
+  .n-progress .n-progress-graph-line-fill { box-shadow: 0 0 14px rgba(200, 161, 90, .3); }
+
+  .n-card {
+    border: 1px solid var(--surface-border) !important;
+    border-radius: 8px !important;
+    background: rgba(245, 241, 229, .94) !important;
+    box-shadow: 0 14px 32px rgba(11, 36, 25, .13) !important;
+    backdrop-filter: blur(10px) saturate(108%);
+    -webkit-backdrop-filter: blur(10px) saturate(108%);
+  }
+
+  html.dark .n-card { background: rgba(18, 36, 31, .96) !important; box-shadow: 0 18px 36px rgba(2, 10, 8, .24) !important; }
+  .n-card-header { padding: 1.15rem 1.35rem .7rem !important; }
+  .n-card__content { padding: 0 1.35rem 1.35rem !important; }
+  .n-card-header__main { color: var(--mountain-deep); font-size: 1.2rem; letter-spacing: .08em; }
+  html.dark .n-card-header__main { color: #d9ead9; }
+
+  .n-button { border-radius: 6px !important; min-height: 40px; transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+  .n-button:not(.n-button--disabled):hover { transform: none; box-shadow: 0 6px 14px rgba(14, 54, 42, .12); }
+  .n-button.n-button--primary-type { --n-color: #154c3d !important; --n-color-hover: #216d56 !important; --n-color-pressed: #0f382d !important; --n-border: #154c3d !important; }
+  .n-button.n-button--warning-type { --n-color: var(--star-gold) !important; --n-color-hover: #d2b36e !important; --n-color-pressed: #9c783e !important; --n-text-color: #17231d !important; }
+  .n-button.n-button--error-type { --n-color: var(--cinnabar) !important; --n-color-hover: #c45a48 !important; }
+  .n-alert { border-radius: 6px !important; }
+  .n-input, .n-base-selection, .n-input-number { border-radius: 6px !important; }
+  .n-tag { border-radius: 4px !important; }
+  .n-modal, .n-dialog { border-radius: 8px !important; }
+
+  :focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+  ::-webkit-scrollbar-thumb { border-radius: 4px; background: rgba(44, 128, 104, .66); }
+
+  @media (max-width: 640px) {
+    .app-shell::before { background-position: 58% 22%; }
+    .status-band { border-radius: 7px; }
+    .n-card-header { padding: 1rem 1rem .6rem !important; }
+    .n-card__content { padding: 0 1rem 1rem !important; }
+  }
+</style>
+
+<style>
   /* Visual refresh: let the existing landscape carry the atmosphere while the UI reads like a calm jade tablet. */
   :root {
     --paper: #e9e5d5;
@@ -478,3 +698,5 @@
     .status-band { border-radius: 11px; }
   }
 </style>
+
+<style src="./styles/xiuxian-theme.css"></style>

@@ -8,7 +8,7 @@
     "dev:cloudstudio": "vite --host 0.0.0.0 --port 2025",
     "build": "vite build",
     "preview": "vite preview --open --port 2026",
-    "test": "node --test tests/game-rules.test.js tests/exploration-rules.test.js tests/combat-rules.test.js tests/techniques.test.js tests/reward-rules.test.js tests/save-validation.test.js tests/equipment-rules.test.js tests/equipment-enhance.test.js tests/content-expansion.test.js"
+    "test": "node --test tests/game-rules.test.js tests/exploration-rules.test.js tests/combat-rules.test.js tests/techniques.test.js tests/reward-rules.test.js tests/save-validation.test.js tests/equipment-rules.test.js tests/equipment-enhance.test.js tests/content-expansion.test.js tests/tasks.test.js tests/sect.test.js tests/cave.test.js tests/regressions.test.js tests/market.test.js tests/stage-goals.test.js"
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",

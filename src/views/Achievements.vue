@@ -70,13 +70,6 @@
     })
   })
 
-  // 获取所有成就类别
-  const achievementCategories = Object.entries(achievements).map(([key, value]) => ({
-    key,
-    name: getCategoryName(key),
-    achievements: value
-  }))
-
   // 获取成就类别名称
   const getCategoryName = category => {
     const categoryNames = {
@@ -92,6 +85,13 @@
     }
     return categoryNames[category] || '其他成就'
   }
+
+  // 获取所有成就类别
+  const achievementCategories = Object.entries(achievements).map(([key, value]) => ({
+    key,
+    name: getCategoryName(key),
+    achievements: value
+  }))
 
   // 检查成就是否完成
   const isAchievementCompleted = achievementId => {

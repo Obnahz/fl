@@ -1,5 +1,6 @@
 // 使用 CryptoJS 进行数据加密和解密
 import CryptoJS from 'crypto-js'
+import { STAGE_GOAL_VERSION, STAGE_PREPARATION_KEYS } from './stageGoals.js'
 
 // 数据加密
 export const encryptData = data => {
@@ -38,7 +39,7 @@ export const validateData = data => {
   if (!Number.isFinite(data.cultivation) || data.cultivation < 0) return false
   if (!Number.isFinite(data.maxCultivation) || data.maxCultivation <= 0) return false
   if (!Number.isFinite(data.spirit) || data.spirit < 0) return false
-  if (data.saveVersion !== undefined && (!Number.isInteger(data.saveVersion) || data.saveVersion < 0 || data.saveVersion > 5)) return false
+  if (data.saveVersion !== undefined && (!Number.isInteger(data.saveVersion) || data.saveVersion < 0 || data.saveVersion > 9)) return false
   if (data.currentHealth !== undefined && (!Number.isFinite(data.currentHealth) || data.currentHealth < 0)) return false
   if (data.equipmentPity !== undefined && (!Number.isInteger(data.equipmentPity) || data.equipmentPity < 0 || data.equipmentPity > 8)) return false
 
@@ -74,6 +75,30 @@ export const validateData = data => {
     )
   if (data.techniqueLevels !== undefined && !isValidProgressMap(data.techniqueLevels, 1)) return false
   if (data.techniqueFragments !== undefined && !isValidProgressMap(data.techniqueFragments, 0)) return false
+
+  if (data.stageGoal !== undefined) {
+    const goal = data.stageGoal
+    if (!goal || typeof goal !== 'object' || Array.isArray(goal)) return false
+    if (goal.version !== undefined && goal.version !== STAGE_GOAL_VERSION) return false
+    if (goal.level !== undefined && (!Number.isInteger(goal.level) || goal.level < 1)) return false
+    if (goal.status !== undefined && !['preparing', 'ready', 'settled'].includes(goal.status)) return false
+    const isStageMap = value =>
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      STAGE_PREPARATION_KEYS.every(key => value[key] === undefined || (Number.isFinite(value[key]) && value[key] >= 0))
+    for (const field of ['preparations', 'costs', 'risks']) {
+      if (goal[field] !== undefined && !isStageMap(goal[field])) return false
+    }
+    if (goal.lastAction !== undefined && goal.lastAction !== null && typeof goal.lastAction !== 'string') return false
+    for (const field of ['outcome', 'lastOutcome']) {
+      if (goal[field] === undefined || goal[field] === null) continue
+      if (typeof goal[field] !== 'object' || Array.isArray(goal[field])) return false
+      if (goal[field].success !== undefined && typeof goal[field].success !== 'boolean') return false
+      if (goal[field].reason !== undefined && typeof goal[field].reason !== 'string') return false
+      if (goal[field].settledAt !== undefined && !Number.isFinite(goal[field].settledAt)) return false
+    }
+  }
 
   return true
 }

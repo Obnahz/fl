@@ -9,15 +9,16 @@
         </template>
         通过打坐修炼来提升修为，积累足够的修为后可以尝试突破境界。
       </n-alert>
+      <DailyTasks />
       <n-space vertical>
-        <n-button type="primary" size="large" block @click="cultivate" :disabled="playerStore.spirit < cultivationCost">
+        <n-button type="primary" size="large" block @click="cultivate" :disabled="playerStore.spirit < cultivationCost || isBatchCultivationPending">
           打坐修炼 (消耗 {{ cultivationCost }} 灵力)
         </n-button>
         <n-button
           :type="isAutoCultivating ? 'warning' : 'success'"
           size="large"
           block
-          :disabled="canBreakthrough() && !isAutoCultivating"
+          :disabled="(canBreakthrough() && !isAutoCultivating) || isBatchCultivationPending"
           @click="toggleAutoCultivation"
         >
           {{ isAutoCultivating ? '停止自动修炼' : '开始自动修炼' }}
@@ -27,19 +28,28 @@
           size="large"
           block
           @click="cultivateUntilBreakthrough"
-          :disabled="canBreakthrough() || playerStore.spirit < calculateBreakthroughCost()"
+          :loading="isBatchCultivationPending"
+          :disabled="canBreakthrough() || playerStore.spirit < calculateBreakthroughCost() || isBatchCultivationPending"
         >
           闭关至圆满
         </n-button>
+        <n-text depth="3" v-if="!canBreakthrough()">
+          预计消耗 {{ cultivationEstimate.totalCost }} 灵力，修炼 {{ cultivationEstimate.times }} 次；剩余灵力 {{
+            Math.max(0, playerStore.spirit - cultivationEstimate.totalCost).toFixed(1)
+          }}
+        </n-text>
         <n-button
           type="warning"
           size="large"
           block
           @click="attemptBreakthrough"
-          :disabled="!canBreakthrough()"
+          :disabled="!canBreakthrough() || isBatchCultivationPending"
         >
           冲关突破（成功率 {{ breakthroughChance }}%）
         </n-button>
+        <n-alert type="info" :show-icon="false">
+          当前采用 {{ playerStore.stageStrategy.name }}：{{ playerStore.stageStrategy.description }}
+        </n-alert>
       </n-space>
       <n-divider>修炼详情</n-divider>
       <n-descriptions bordered :column="detailsColumns">
@@ -60,7 +70,8 @@
   import { NIcon } from 'naive-ui'
   import { BookOutline } from '@vicons/ionicons5'
   import LogPanel from '../components/LogPanel.vue'
-  import { getBreakthroughChance } from '../plugins/gameRules'
+  import DailyTasks from '../components/DailyTasks.vue'
+  import { calculateCultivationBatch, getBreakthroughChance } from '../plugins/gameRules'
 
   const playerStore = usePlayerStore()
   const logRef = ref(null)
@@ -94,26 +105,35 @@
   })
 
   const displayedCultivationGain = computed(() => {
-    return Number((cultivationGain.value * playerStore.cultivationRate).toFixed(2))
+    return Number((cultivationGain.value * playerStore.effectiveCultivationRate).toFixed(2))
   })
 
+  const cultivationEstimate = computed(() =>
+    calculateCultivationBatch({
+      level: playerStore.level,
+      spirit: Number.MAX_SAFE_INTEGER,
+      cultivation: playerStore.cultivation,
+      maxCultivation: playerStore.maxCultivation,
+      luck: playerStore.luck,
+      effectiveCultivationRate: playerStore.effectiveCultivationRate,
+      rolls: []
+    })
+  )
+
   const breakthroughChance = computed(() => {
-    return Math.round(getBreakthroughChance({ level: playerStore.level, luck: playerStore.luck }) * 100)
+    return Math.round(Math.min(0.98, getBreakthroughChance({ level: playerStore.level, luck: playerStore.luck }) + playerStore.stageStrategy.chanceBonus) * 100)
   })
   const detailsColumns = computed(() => (viewportWidth.value < 640 ? 1 : 3))
 
   // 计算突破所需的总灵力
   const calculateBreakthroughCost = () => {
-    const remainingCultivation = Math.max(0, playerStore.maxCultivation - playerStore.cultivation)
-    const gain = displayedCultivationGain.value || 1
-    if (gain <= 0) return 0
-    const cultivationTimes = Math.ceil(remainingCultivation / gain)
-    return Math.max(0, cultivationTimes * getCurrentCultivationCost())
+    return cultivationEstimate.value.totalCost
   }
 
   // 自动修炼状态
   const isAutoCultivating = ref(false)
   const cultivationTimer = ref(null)
+  const isBatchCultivationPending = ref(false)
 
   // 显示消息并处理重复
   const showMessage = (type, content) => {
@@ -142,27 +162,36 @@
   // 处理Worker消息
   cultivationWorker.onmessage = ({ data }) => {
     if (data.type === 'error') {
+      isBatchCultivationPending.value = false
       showMessage('error', data.message)
       return
     }
     if (data.type === 'success') {
+      isBatchCultivationPending.value = false
       const { spiritCost, cultivationGain, doubleGainTimes } = data.result
       // 扣除灵力
       playerStore.spirit -= spiritCost
       // 增加修为
-      playerStore.cultivate(cultivationGain)
+      playerStore.cultivate(cultivationGain, { source: 'batch', spiritCost, attempts: data.result.times })
       if (doubleGainTimes > 0) {
         showMessage('success', `福缘不错，获得${doubleGainTimes}次双倍修为！`)
       }
-      showMessage('success', canBreakthrough() ? '闭关结束，修为已经圆满！' : '修炼成功！')
+      const settledGain = cultivationGain * playerStore.effectiveCultivationRate
+      showMessage(
+        'success',
+        `闭关完成：修炼${data.result.times}次，消耗${spiritCost}灵力，获得${settledGain.toFixed(2)}修为。`
+      )
+      if (canBreakthrough()) showMessage('success', '修为已经圆满，可以冲关突破！')
     }
   }
 
   // 一键修炼（直到突破）
   const cultivateUntilBreakthrough = () => {
+    if (isBatchCultivationPending.value) return
     try {
       // 检查是否已经达到突破条件
       if (!canBreakthrough()) {
+        isBatchCultivationPending.value = true
         // 发送数据到Worker进行计算
         cultivationWorker.postMessage({
           type: 'cultivateUntilBreakthrough',
@@ -172,13 +201,15 @@
             cultivation: playerStore.cultivation,
             maxCultivation: playerStore.maxCultivation,
             luck: playerStore.luck,
-            cultivationRate: playerStore.cultivationRate
+            effectiveCultivationRate: playerStore.effectiveCultivationRate
           }
         })
       } else {
+        isBatchCultivationPending.value = false
         showMessage('info', '修为已经圆满，请点击冲关突破。')
       }
     } catch (error) {
+      isBatchCultivationPending.value = false
       console.error('一键修炼出错：', error)
       showMessage('error', '修炼失败！')
     }
@@ -186,12 +217,14 @@
 
   // 手动修炼
   const cultivate = () => {
+    if (isBatchCultivationPending.value) return
     try {
       const currentCost = getCurrentCultivationCost()
       if (playerStore.spirit >= currentCost) {
         playerStore.spirit -= currentCost
-        playerStore.cultivate(calculateCultivationGain())
-        showMessage('success', canBreakthrough() ? '修为已经圆满，可以冲关突破！' : '修炼成功！')
+      const gain = calculateCultivationGain()
+      playerStore.cultivate(gain, { source: 'manual', spiritCost: currentCost })
+      showMessage('success', `修炼成功：消耗${currentCost}灵力，获得${(gain * playerStore.effectiveCultivationRate).toFixed(2)}修为。`)
       } else {
         showMessage('error', '灵力不足！')
       }
@@ -203,6 +236,7 @@
 
   // 切换自动修炼
   const toggleAutoCultivation = () => {
+    if (isBatchCultivationPending.value) return
     try {
       isAutoCultivating.value = !isAutoCultivating.value
       if (isAutoCultivating.value) {
@@ -211,7 +245,7 @@
           const currentCost = getCurrentCultivationCost()
           if (playerStore.spirit >= currentCost) {
             playerStore.spirit -= currentCost
-            playerStore.cultivate(cultivationGain.value)
+            playerStore.cultivate(cultivationGain.value, { source: 'auto', spiritCost: currentCost })
             if (canBreakthrough()) {
               toggleAutoCultivation()
               showMessage('success', '修为已经圆满，自动修炼已停止。')
@@ -232,6 +266,7 @@
   }
 
   const attemptBreakthrough = () => {
+    if (isBatchCultivationPending.value) return
     const result = playerStore.tryBreakthrough()
     if (!result.ready) {
       showMessage('info', '修为尚未圆满。')
@@ -254,6 +289,7 @@
   onUnmounted(() => {
     window.removeEventListener('resize', updateViewportWidth)
     cultivationWorker.terminate()
+    isBatchCultivationPending.value = false
     try {
       if (cultivationTimer.value) {
         clearInterval(cultivationTimer.value)
@@ -265,17 +301,3 @@
     }
   })
 </script>
-
-<style scoped>
-  .n-space {
-    width: 100%;
-  }
-
-  .n-button {
-    margin-bottom: 12px;
-  }
-
-  .n-collapse {
-    margin-top: 12px;
-  }
-</style>

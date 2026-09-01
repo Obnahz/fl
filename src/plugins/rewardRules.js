@@ -5,6 +5,35 @@ import {
   normalizeTechniqueLevels
 } from './techniques.js'
 
+const RESOURCE_REWARD_KEYS = [
+  'spirit',
+  'spiritStones',
+  'reinforceStones',
+  'refinementStones',
+  'sectContribution'
+]
+
+const normalizeResourceAmount = value => {
+  const amount = Number(value)
+  return Number.isFinite(amount) && amount > 0 ? Math.floor(amount) : 0
+}
+
+export const applyResourceSettlement = ({ resources = {}, reward = {} } = {}) => {
+  const next = Object.fromEntries(
+    RESOURCE_REWARD_KEYS.map(key => [key, Math.max(0, Number(resources[key]) || 0)])
+  )
+  const applied = {}
+
+  for (const key of RESOURCE_REWARD_KEYS) {
+    const amount = normalizeResourceAmount(reward[key])
+    if (!amount) continue
+    next[key] += amount
+    applied[key] = amount
+  }
+
+  return { resources: next, applied }
+}
+
 export const applySkillReward = ({
   skillId,
   unlockedSkills,

@@ -1,6 +1,7 @@
 import { getRandomHerb, herbQualities } from './herbs'
 import { pillRecipes } from './pills'
 import { compareEquipment, createEquipmentDrop, EQUIPMENT_SETS, getEquipmentScore } from './equipmentRules'
+import { applySectRewardBonus } from './sect'
 
 // 随机事件配置
 export const events = [
@@ -99,45 +100,51 @@ export const events = [
 ]
 
 // 奖励处理函数
-export const handleReward = (reward, playerStore, showMessage) => {
-  switch (reward.type) {
+export const handleReward = (reward, playerStore, showMessage, options = {}) => {
+  const settledReward = applySectRewardBonus(reward, playerStore.activeSectBonuses, options)
+  const bonusAmount = Math.max(0, settledReward.amount - settledReward.baseAmount)
+  const bonusText = bonusAmount > 0 ? `（宗门加成 +${bonusAmount}）` : ''
+
+  switch (settledReward.type) {
     case 'spirit_stone':
-      playerStore.spiritStones += reward.amount
-      showMessage('success', `[灵石获取]获得${reward.amount}颗灵石`)
+      playerStore.spiritStones += settledReward.amount
+      showMessage('success', `[灵石获取]获得${settledReward.amount}颗灵石${bonusText}`)
       break
     case 'spirit':
-      playerStore.spirit += reward.amount
-      showMessage('success', `[灵力获取]获得${reward.amount}点灵力`)
+      playerStore.spirit += settledReward.amount
+      showMessage('success', `[灵力获取]获得${settledReward.amount}点灵力${bonusText}`)
       break
     case 'herb':
       // 获取指定数量的随机灵草
-      for (let i = 0; i < reward.amount; i++) {
+      for (let i = 0; i < settledReward.amount; i++) {
         const herb = getRandomHerb()
         if (herb) {
           playerStore.herbs.push(herb)
           showMessage('success', `[灵草获取]获得${herbQualities[herb.quality].name}品质的${herb.name}`)
         }
       }
+      if (bonusAmount > 0) showMessage('success', `[宗门加成]本次额外获得${bonusAmount}株灵草`)
       break
     case 'cultivation':
-      playerStore.cultivate(reward.amount)
-      showMessage('success', `[修为获取]获得${reward.amount}点修为`)
+      playerStore.cultivation += settledReward.amount
+      showMessage('success', `[修为获取]获得${settledReward.amount}点修为${bonusText}`)
       if (playerStore.cultivation >= playerStore.maxCultivation) {
         showMessage('info', '[突破]修为已经圆满，可返回洞府尝试突破。')
       }
       break
     case 'pill_fragment':
       // 随机获得丹方残页
-      for (let i = 0; i < reward.amount; i++) {
+      for (let i = 0; i < settledReward.amount; i++) {
         const randomRecipe = pillRecipes[Math.floor(Math.random() * pillRecipes.length)]
         if (randomRecipe) {
           playerStore.gainPillFragment(randomRecipe.id)
           showMessage('success', `[丹方获取]获得${randomRecipe.name}的丹方残页`)
         }
       }
+      if (bonusAmount > 0) showMessage('success', `[宗门加成]本次额外获得${bonusAmount}枚丹方残页`)
       break
     case 'equipment': {
-      const equipment = createEquipmentDrop({ tier: reward.tier, playerLevel: playerStore.level })
+      const equipment = createEquipmentDrop({ tier: settledReward.tier, playerLevel: playerStore.level })
       const comparison = compareEquipment(equipment, playerStore.equippedArtifacts[equipment.slot])
       playerStore.addEquipment(equipment)
       playerStore.itemsFound++
@@ -157,7 +164,7 @@ export const handleReward = (reward, playerStore, showMessage) => {
       break
     }
     case 'skill': {
-      const result = playerStore.unlockTechnique(reward.skillId, reward.duplicateFragments)
+      const result = playerStore.unlockTechnique(settledReward.skillId, settledReward.duplicateFragments)
       if (!result.valid) {
         showMessage('warning', '[功法传承]残缺传承无法领悟。')
       } else if (result.unlocked) {
@@ -170,7 +177,7 @@ export const handleReward = (reward, playerStore, showMessage) => {
       break
     }
     case 'technique_fragment': {
-      const result = playerStore.gainTechniqueFragments(reward.techniqueId, reward.amount)
+      const result = playerStore.gainTechniqueFragments(settledReward.techniqueId, settledReward.amount)
       if (result.valid) {
         showMessage('success', `[功法残页]获得${result.technique.name}残页${result.gained}枚。`)
       } else {
@@ -179,6 +186,7 @@ export const handleReward = (reward, playerStore, showMessage) => {
       break
     }
   }
+  return settledReward
 }
 
 // 随机获取奖励

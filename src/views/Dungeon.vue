@@ -295,7 +295,8 @@
   import { CombatManager, CombatEntity, generateEnemy, CombatType } from '../plugins/combat'
   import { buildDungeonPlayerCombatant } from '../plugins/combatRules'
   import { selectTechniqueForCombat } from '../plugins/techniques'
-  import { getRandomOptions } from '../plugins/dungeon'
+  import { applySectRewardBonus } from '../plugins/sect'
+  import { getDungeonHighestFloorKey, getRandomOptions } from '../plugins/dungeon'
   import dungeonBuffs from '../plugins/dungeonBuffs'
   import { useMessage } from 'naive-ui'
   import LogPanel from '../components/LogPanel.vue'
@@ -310,22 +311,7 @@
   const infoShow = ref(false)
   const infoType = ref('')
 
-  const floorData = computed(() => {
-    switch (playerStore.dungeonDifficulty) {
-      case 1:
-        return playerStore.dungeonHighestFloor
-      case 2:
-        return playerStore.dungeonHighestFloor_2
-      case 5:
-        return playerStore.dungeonHighestFloor_5
-      case 10:
-        return playerStore.dungeonHighestFloor_10
-      case 100:
-        return playerStore.dungeonHighestFloor_100
-      default:
-        return playerStore.dungeonHighestFloor
-    }
-  })
+  const floorData = computed(() => playerStore[getDungeonHighestFloorKey(playerStore.dungeonDifficulty)])
 
   // 副本状态
   const dungeonState = ref({
@@ -440,6 +426,11 @@
   // 开始新的副本
   const startDungeon = () => {
     const startingFloor = floorData.value
+    playerStore.recordStagePreparation('dungeon', {
+      amount: 1,
+      risk: startingFloor * 0.01,
+      action: `进入秘境：第${startingFloor}层`
+    })
     dungeonState.value = {
       floor: startingFloor,
       inCombat: false,
@@ -477,6 +468,11 @@
 
   // 选择选项
   const selectOption = option => {
+    playerStore.recordStagePreparation('dungeon', {
+      amount: 1,
+      risk: option.rarity === 'epic' ? 0.2 : option.rarity === 'rare' ? 0.1 : 0.05,
+      action: `选择秘境增益：${option.name}`
+    })
     dungeonBuffs.apply(playerStore, option)
     message.success(`选择了：${option.name}`)
     dungeonState.value.showingOptions = false
@@ -580,6 +576,7 @@
     message.success(`击败了第 ${dungeonState.value.floor} 层的敌人！`)
     // 更新统计数据
     playerStore.dungeonTotalKills++
+    playerStore.recordTaskEvent('dungeon')
     if (dungeonState.value.floor % 10 === 0) {
       playerStore.dungeonBossKills++
     } else if (dungeonState.value.floor % 5 === 0) {
@@ -589,8 +586,9 @@
       message.success(`获得了${playerStore.dungeonDifficulty}颗洗练石`)
     }
     // 更新最高层数记录
-    if (dungeonState.value.floor > playerStore.dungeonHighestFloor) {
-      playerStore.dungeonHighestFloor = dungeonState.value.floor
+    const highestFloorKey = getDungeonHighestFloorKey(playerStore.dungeonDifficulty)
+    if (dungeonState.value.floor > playerStore[highestFloorKey]) {
+      playerStore[highestFloorKey] = dungeonState.value.floor
     }
     // 获得奖励
     const rewards = generateRewards()
@@ -608,10 +606,10 @@
     const rewards = []
     // 灵石奖励
     const baseStones = 10 * dungeonState.value.floor * playerStore.dungeonDifficulty
-    rewards.push({
+    rewards.push(applySectRewardBonus({
       type: 'spirit_stones',
       amount: baseStones
-    })
+    }, playerStore.activeSectBonuses, { source: 'dungeon' }))
     return rewards
   }
 

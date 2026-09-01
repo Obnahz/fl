@@ -75,10 +75,18 @@ export const getBreakthroughChance = ({ level, luck }) => {
   return Math.min(0.95, Math.max(0.45, 0.85 - realmPenalty + luckBonus))
 }
 
-export const calculateBreakthroughOutcome = ({ level, luck, cultivation, maxCultivation, roll = Math.random() }) => {
+export const calculateBreakthroughOutcome = ({
+  level,
+  luck,
+  cultivation,
+  maxCultivation,
+  roll = Math.random(),
+  chanceBonus = 0,
+  lossMultiplier = 1
+}) => {
   const currentCultivation = Number(cultivation) || 0
   const requiredCultivation = Math.max(1, Number(maxCultivation) || 1)
-  const chance = getBreakthroughChance({ level, luck })
+  const chance = Math.min(0.98, Math.max(0.05, getBreakthroughChance({ level, luck }) + Number(chanceBonus || 0)))
 
   if (currentCultivation < requiredCultivation) {
     return { ready: false, success: false, chance, loss: 0, cultivationAfter: currentCultivation }
@@ -94,12 +102,74 @@ export const calculateBreakthroughOutcome = ({ level, luck, cultivation, maxCult
     }
   }
 
-  const loss = Math.ceil(requiredCultivation * 0.2)
+  const loss = Math.ceil(requiredCultivation * 0.2 * Math.max(0, Number(lossMultiplier) || 0))
   return {
     ready: true,
     success: false,
     chance,
     loss,
     cultivationAfter: Math.max(0, currentCultivation - loss)
+  }
+}
+
+const BASE_CULTIVATION_COST = 10
+const BASE_CULTIVATION_GAIN = 1
+const EXTRA_CULTIVATION_CHANCE = 0.3
+
+const getCultivationCost = level =>
+  Math.floor(BASE_CULTIVATION_COST * Math.pow(1.5, Math.max(0, Number(level) - 1)))
+
+const getCultivationGain = level =>
+  Math.floor(BASE_CULTIVATION_GAIN * Math.pow(1.2, Math.max(0, Number(level) - 1)))
+
+export const calculateCultivationBatch = ({
+  level = 1,
+  spirit = 0,
+  cultivation = 0,
+  maxCultivation = 0,
+  luck = 1,
+  effectiveCultivationRate = 1,
+  rolls = []
+} = {}) => {
+  const currentSpirit = Math.max(0, Number(spirit) || 0)
+  const currentCultivation = Math.max(0, Number(cultivation) || 0)
+  const cultivationLimit = Math.max(0, Number(maxCultivation) || 0)
+  const baseGain = getCultivationGain(level)
+  const costPerAttempt = getCultivationCost(level)
+  const effectiveRate = Math.max(0, Number(effectiveCultivationRate) || 0)
+  const gainPerAttempt = baseGain * effectiveRate
+  const remainingCultivation = Math.max(0, cultivationLimit - currentCultivation)
+  const times = gainPerAttempt > 0 ? Math.ceil(remainingCultivation / gainPerAttempt) : 0
+  const totalCost = times * costPerAttempt
+
+  if (currentSpirit < totalCost) {
+    return {
+      valid: false,
+      times,
+      totalCost,
+      rawCultivationGain: 0,
+      cultivationGain: 0,
+      doubleGainTimes: 0,
+      effectiveCultivationRate: effectiveRate
+    }
+  }
+
+  let rawCultivationGain = 0
+  let doubleGainTimes = 0
+  for (let index = 0; index < times; index += 1) {
+    const roll = Number.isFinite(rolls[index]) ? rolls[index] : Math.random()
+    const doubled = roll < EXTRA_CULTIVATION_CHANCE * Math.max(0, Number(luck) || 0)
+    rawCultivationGain += doubled ? baseGain * 2 : baseGain
+    if (doubled) doubleGainTimes += 1
+  }
+
+  return {
+    valid: true,
+    times,
+    totalCost,
+    rawCultivationGain,
+    cultivationGain: rawCultivationGain * effectiveRate,
+    doubleGainTimes,
+    effectiveCultivationRate: effectiveRate
   }
 }

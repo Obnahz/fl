@@ -226,6 +226,14 @@ const roguelikeOptions = {
   ]
 }
 
+export const getDungeonHighestFloorKey = difficulty => {
+  const normalized = Number(difficulty)
+  if (normalized === 2 || normalized === 5 || normalized === 10 || normalized === 100) {
+    return `dungeonHighestFloor_${normalized}`
+  }
+  return 'dungeonHighestFloor'
+}
+
 // 获取随机选项
 const getRandomOptions = floor => {
   // 基础概率设置

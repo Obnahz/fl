@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { GameDB } from './db'
 import { pillRecipes, tryCreatePill, calculatePillEffect } from '../plugins/pills'
 import { encryptData, decryptData, validateData } from '../plugins/crypto'
+import { MAX_SAVE_BYTES } from '../plugins/saveLimits'
 import { getRealmName, getRealmLength } from '../plugins/realm'
 import {
   calculateBreakthroughOutcome,
@@ -22,12 +23,89 @@ import {
   normalizeUnlockedTechniques,
   selectTechniqueForCombat
 } from '../plugins/techniques'
-import { applySkillReward } from '../plugins/rewardRules'
+import { applyResourceSettlement, applySkillReward } from '../plugins/rewardRules'
+import { buildDungeonPlayerCombatant, resolveAutoCombat } from '../plugins/combatRules'
+import { getCultivationTelemetry, recordCultivationTelemetry } from '../plugins/cultivationTelemetry'
+import { getEnemiesForLocation } from '../plugins/enemies'
+import { locations } from '../plugins/locations'
+import {
+  changeCaveFacility,
+  claimCaveRewards,
+  createCaveState,
+  normalizeCaveState,
+  settleCaveOffline
+} from '../plugins/cave'
+import {
+  claimActivityChest,
+  claimSevenDayGoal,
+  claimTask,
+  createDailyState,
+  createSevenDayState,
+  getDateKey,
+  getRecommendedTask,
+  normalizeDailyState,
+  normalizeSevenDayState,
+  recordSevenDayEvent,
+  recordTaskEvent
+} from '../plugins/tasks'
+import {
+  addSectContribution,
+  changeCultivationDirection,
+  claimSectCommission as claimSectCommissionRule,
+  createSectOperationsState,
+  createSectState,
+  getActiveSectBonuses,
+  joinSect,
+  normalizeSectOperationsState,
+  normalizeSectState,
+  purchaseSectShopItem,
+  refreshSectShop,
+  startSectCommission as startSectCommissionRule,
+  upgradeSect
+} from '../plugins/sect'
+import {
+  createMarketState,
+  getMarketOffers,
+  normalizeMarketState,
+  purchaseMarketOffer,
+  refreshMarket
+} from '../plugins/market'
+import {
+  createStageGoal,
+  getStageGoalProgress,
+  getStageStrategy,
+  normalizeStageGoal,
+  recordStagePreparation,
+  restartStageGoal,
+  settleStageGoal,
+  summarizeStageOutcome
+} from '../plugins/stageGoals'
 
-const SAVE_VERSION = 5
-const OFFLINE_CAP_SECONDS = 8 * 60 * 60
+const SAVE_VERSION = 9
 let saveTimer = null
 let savePromise = null
+
+const getAvailableTaskEvents = player => {
+  const events = ['cultivation', 'exploration', 'spirit']
+  if (Array.isArray(player?.pillRecipes) && player.pillRecipes.length > 0) events.push('alchemy')
+  if (
+    (Array.isArray(player?.items) && player.items.some(item => item && item.type !== 'pill' && item.type !== 'pet')) ||
+    Object.values(player?.equippedArtifacts || {}).some(Boolean)
+  ) {
+    events.push('equipment')
+  }
+  if ((Number(player?.level) || 1) >= 2) events.push('dungeon')
+  return events
+}
+
+const getSectChallengeEnemy = player => {
+  const location = [...locations]
+    .filter(item => item.minLevel <= (Number(player?.level) || 1))
+    .sort((left, right) => right.minLevel - left.minLevel)[0]
+  if (!location) return null
+  const enemies = getEnemiesForLocation(location.id)
+  return enemies.find(enemy => enemy.type === 'elite') || enemies[0] || null
+}
 
 export const usePlayerStore = defineStore('player', {
   state: () => ({
@@ -201,7 +279,15 @@ export const usePlayerStore = defineStore('player', {
     activeTechniqueId: STARTER_TECHNIQUE_ID,
     techniqueLevels: { [STARTER_TECHNIQUE_ID]: 1 },
     techniqueFragments: {},
-    completedAchievements: [] // 已完成成就
+    completedAchievements: [], // 已完成成就
+    dailyState: createDailyState(),
+    sevenDayState: createSevenDayState(),
+    cosmeticUnlocks: [],
+    sectState: createSectState(),
+    sectOperationsState: createSectOperationsState(getDateKey()),
+    marketState: createMarketState(getDateKey()),
+    caveState: createCaveState(),
+    stageGoal: createStageGoal(1)
   }),
   getters: {
     activeEquipmentSetBonuses() {
@@ -209,6 +295,33 @@ export const usePlayerStore = defineStore('player', {
     },
     equipmentSetState() {
       return getEquipmentSetState(this.equippedArtifacts)
+    },
+    dailyRecommendedTask() {
+      return getRecommendedTask(this.dailyState)
+    },
+    activeSectBonuses() {
+      return getActiveSectBonuses(this.sectState)
+    },
+    effectiveSpiritRate() {
+      return this.spiritRate * (this.activeSectBonuses.spiritRate || 1)
+    },
+    effectiveCultivationRate() {
+      return this.cultivationRate * (this.activeSectBonuses.cultivationRate || 1)
+    },
+    effectiveAlchemyRate() {
+      return this.alchemyRate * (this.activeSectBonuses.alchemySuccessRate || 1)
+    },
+    stageGoalProgress() {
+      return getStageGoalProgress(this.stageGoal, {
+        cultivation: this.cultivation,
+        maxCultivation: this.maxCultivation
+      })
+    },
+    stageOutcomeSummary() {
+      return summarizeStageOutcome(this.stageGoal)
+    },
+    stageStrategy() {
+      return getStageStrategy(this.stageGoal)
     },
     // 获取灵宠的属性加成
     getPetBonus() {
@@ -350,6 +463,16 @@ export const usePlayerStore = defineStore('player', {
         activeTechniqueId: activeTechnique?.id || STARTER_TECHNIQUE_ID,
         techniqueLevels,
         techniqueFragments,
+        dailyState: normalizeDailyState(data.dailyState, getDateKey(), getAvailableTaskEvents(data)),
+        sevenDayState: normalizeSevenDayState(data.sevenDayState, getDateKey()),
+        cosmeticUnlocks: Array.isArray(data.cosmeticUnlocks)
+          ? [...new Set(data.cosmeticUnlocks.filter(item => typeof item === 'string'))]
+          : [],
+        sectState: normalizeSectState(data.sectState),
+        sectOperationsState: normalizeSectOperationsState(data.sectOperationsState, getDateKey()),
+        marketState: normalizeMarketState(data.marketState, getDateKey()),
+        caveState: normalizeCaveState(data.caveState, Number(data.lastActiveAt) || Date.now()),
+        stageGoal: normalizeStageGoal(data.stageGoal, level, Number(data.lastActiveAt) || Date.now()),
         saveVersion: SAVE_VERSION,
         lastActiveAt: Number(data.lastActiveAt) || Date.now(),
         lastOfflineGain: 0
@@ -377,14 +500,15 @@ export const usePlayerStore = defineStore('player', {
     // Settle a bounded amount of spirit gained while the page was closed.
     applyOfflineProgress() {
       const now = Date.now()
-      const elapsedSeconds = Math.max(0, Math.min(OFFLINE_CAP_SECONDS, (now - this.lastActiveAt) / 1000))
-      const gain = Math.floor(elapsedSeconds * this.spiritRate)
-      this.lastOfflineGain = gain
+      const settled = settleCaveOffline(this.caveState, {
+        now,
+        spiritRate: this.effectiveSpiritRate
+      })
+      this.caveState = settled.state
+      this.lastOfflineGain = 0
       this.lastActiveAt = now
-      if (gain > 0) {
-        this.spirit += gain
-      }
       this.saveData({ immediate: true })
+      return settled
     },
     // 切换暗黑模式
     toggle() {
@@ -397,6 +521,10 @@ export const usePlayerStore = defineStore('player', {
     // 保存数据到IndexedDB
     async saveData({ immediate = false } = {}) {
       this.lastActiveAt = Date.now()
+      this.caveState = {
+        ...this.caveState,
+        lastSettledAt: this.lastActiveAt
+      }
       if (!immediate) {
         if (saveTimer) clearTimeout(saveTimer)
         saveTimer = setTimeout(() => this.saveData({ immediate: true }), 1500)
@@ -437,7 +565,7 @@ export const usePlayerStore = defineStore('player', {
     // 导入存档数据
     async importData(encryptedData) {
       if (typeof encryptedData !== 'string' || encryptedData.length === 0) throw new Error('存档文件为空')
-      if (encryptedData.length > 1024 * 1024) throw new Error('存档文件超过 1 MB 限制')
+      if (encryptedData.length > MAX_SAVE_BYTES) throw new Error('存档文件超过 8 MB 限制')
 
       const decryptedData = decryptData(encryptedData)
       if (!decryptedData || !validateData(decryptedData)) throw new Error('存档内容无效或已损坏')
@@ -475,8 +603,295 @@ export const usePlayerStore = defineStore('player', {
     },
     // 获取灵力
     gainSpirit(amount) {
-      this.spirit += amount * this.spiritRate
+      const gain = amount * this.effectiveSpiritRate
+      this.spirit += gain
+      if (!this.isNewPlayer) this.recordTaskEvent('spirit', Math.max(1, Math.floor(gain)))
       this.saveData()
+    },
+    syncDailyState() {
+      const next = normalizeDailyState(this.dailyState, getDateKey(), getAvailableTaskEvents(this))
+      const changed = JSON.stringify(next) !== JSON.stringify(this.dailyState)
+      this.dailyState = next
+      if (changed) this.saveData({ immediate: true })
+      return this.dailyState
+    },
+    recordTaskEvent(eventType, amount = 1) {
+      this.syncDailyState()
+      this.dailyState = recordTaskEvent(this.dailyState, eventType, amount)
+      this.sevenDayState = recordSevenDayEvent(this.sevenDayState, eventType, amount, getDateKey())
+      this.saveData()
+      return this.dailyState
+    },
+    claimDailyTask(taskId) {
+      this.syncDailyState()
+      const result = claimTask(this.dailyState, taskId)
+      if (!result.success) return result
+      this.dailyState = result.state
+      this.applyTaskReward(result.reward)
+      this.saveData({ immediate: true })
+      return result
+    },
+    claimDailyChest(threshold) {
+      this.syncDailyState()
+      const result = claimActivityChest(this.dailyState, threshold)
+      if (!result.success) return result
+      this.dailyState = result.state
+      this.applyTaskReward(result.reward)
+      this.saveData({ immediate: true })
+      return result
+    },
+    claimSevenDayGoal(day) {
+      const result = claimSevenDayGoal(this.sevenDayState, day, getDateKey())
+      if (!result.success) return result
+      this.sevenDayState = result.state
+      this.applyTaskReward(result.reward)
+      this.saveData({ immediate: true })
+      return result
+    },
+    applyResourceReward(reward = {}) {
+      const result = applyResourceSettlement({
+        resources: {
+          spirit: this.spirit,
+          spiritStones: this.spiritStones,
+          reinforceStones: this.reinforceStones,
+          refinementStones: this.refinementStones,
+          sectContribution: this.sectState.contribution
+        },
+        reward
+      })
+      this.spirit = result.resources.spirit
+      this.spiritStones = result.resources.spiritStones
+      this.reinforceStones = result.resources.reinforceStones
+      this.refinementStones = result.resources.refinementStones
+      if (result.applied.sectContribution) {
+        this.sectState = addSectContribution(this.sectState, result.applied.sectContribution)
+      }
+      return {
+        ...result,
+        resources: { ...result.resources, sectContribution: this.sectState.contribution }
+      }
+    },
+    payResourceCost(cost = {}) {
+      const resourceKeys = ['spirit', 'spiritStones', 'reinforceStones', 'refinementStones']
+      const normalized = {}
+      for (const key of resourceKeys) {
+        const amount = Math.max(0, Math.floor(Number(cost[key]) || 0))
+        if (amount > this[key]) return false
+        normalized[key] = amount
+      }
+      for (const key of resourceKeys) this[key] -= normalized[key]
+      return true
+    },
+    recordStagePreparation(key, options = {}) {
+      this.stageGoal = recordStagePreparation(this.stageGoal, key, options)
+      this.saveData()
+      return this.stageGoal
+    },
+    settleStageGoal({ success = false, reason = '', settledAt = Date.now() } = {}) {
+      this.stageGoal = settleStageGoal(this.stageGoal, { success, reason, settledAt })
+      this.saveData({ immediate: true })
+      return this.stageGoal
+    },
+    applyTaskReward(reward = {}) {
+      this.applyResourceReward(reward)
+      if (typeof reward.cosmeticUnlock === 'string' && !this.cosmeticUnlocks.includes(reward.cosmeticUnlock)) {
+        this.cosmeticUnlocks.push(reward.cosmeticUnlock)
+      }
+    },
+    chooseSect(sectId) {
+      const result = joinSect(this.sectState, sectId)
+      if (!result.success) return result
+      this.sectState = result.state
+      this.recordStagePreparation('sect', { amount: 1, action: `加入宗门：${sectId}` })
+      this.saveData({ immediate: true })
+      return result
+    },
+    gainSectContribution(amount) {
+      this.sectState = addSectContribution(this.sectState, amount)
+      this.saveData()
+      return this.sectState
+    },
+    upgradePlayerSect() {
+      const result = upgradeSect(this.sectState)
+      if (!result.success) return result
+      this.sectState = result.state
+      this.recordStagePreparation('sect', { amount: 1, cost: result.cost || 0, action: '提升宗门等级' })
+      this.saveData({ immediate: true })
+      return result
+    },
+    changeSectDirection(directionId, now = Date.now()) {
+      const result = changeCultivationDirection(this.sectState, directionId, now)
+      if (!result.success) return result
+      this.sectState = result.state
+      this.recordStagePreparation('sect', { amount: 1, cost: result.cost || 0, action: `切换修炼方向：${directionId}` })
+      this.saveData({ immediate: true })
+      return result
+    },
+    syncSectOperations(dateKey = getDateKey()) {
+      const next = normalizeSectOperationsState(this.sectOperationsState, dateKey)
+      const changed = JSON.stringify(next) !== JSON.stringify(this.sectOperationsState)
+      this.sectOperationsState = next
+      if (changed) this.saveData({ immediate: true })
+      return this.sectOperationsState
+    },
+    startSectCommission(commissionId, now = Date.now()) {
+      if (!this.sectState.sectId) return { success: false, reason: 'not_joined' }
+      this.sectOperationsState = normalizeSectOperationsState(this.sectOperationsState, getDateKey())
+      const result = startSectCommissionRule(
+        this.sectOperationsState,
+        commissionId,
+        {
+          spirit: this.spirit,
+          spiritStones: this.spiritStones,
+          reinforceStones: this.reinforceStones,
+          refinementStones: this.refinementStones
+        },
+        now
+      )
+      if (!result.success) return result
+
+      let combat = null
+      if (commissionId === 'challenge') {
+        const enemy = getSectChallengeEnemy(this)
+        if (!enemy) return { ...result, success: false, reason: 'challenge_unavailable' }
+        const technique = selectTechniqueForCombat(
+          this.unlockedSkills,
+          this.activeTechniqueId,
+          this.techniqueLevels
+        )
+        const linked = buildDungeonPlayerCombatant({
+          player: {
+            name: this.name,
+            level: this.level,
+            realm: this.realm,
+            currentHealth: this.currentHealth,
+            baseAttributes: this.baseAttributes,
+            combatAttributes: this.combatAttributes,
+            combatResistance: this.combatResistance,
+            specialAttributes: this.specialAttributes,
+            activeEquipmentSetBonuses: this.activeEquipmentSetBonuses,
+            getPetBonus: this.getPetBonus,
+            activeEffects: this.activeEffects
+          },
+          technique
+        })
+        combat = resolveAutoCombat({ player: linked.stats, enemy, technique, maxRounds: 20 })
+        this.currentHealth = combat.playerHealthAfter
+        if (!this.payResourceCost(result.cost)) return { ...result, success: false, reason: 'insufficient_resources' }
+        if (combat.outcome !== 'victory') {
+          this.saveData({ immediate: true })
+          return { ...result, success: false, reason: 'challenge_failed', combat }
+        }
+      } else if (!this.payResourceCost(result.cost)) {
+        return { ...result, success: false, reason: 'insufficient_resources' }
+      }
+
+      this.sectOperationsState = result.state
+      this.saveData({ immediate: true })
+      return { ...result, combat }
+    },
+    claimSectCommission(commissionId, now = Date.now()) {
+      this.sectOperationsState = normalizeSectOperationsState(this.sectOperationsState, getDateKey())
+      const result = claimSectCommissionRule(this.sectOperationsState, commissionId, now)
+      if (!result.success) return result
+      this.sectOperationsState = result.state
+      this.applyResourceReward(result.settlement.reward)
+      this.saveData({ immediate: true })
+      return result
+    },
+    refreshPlayerSectShop(dateKey = getDateKey()) {
+      const result = refreshSectShop(this.sectOperationsState, this.sectState.contribution, dateKey)
+      if (!result.success) return result
+      this.sectOperationsState = result.state
+      this.sectState = {
+        ...this.sectState,
+        contribution: this.sectState.contribution - result.contributionCost
+      }
+      this.saveData({ immediate: true })
+      return result
+    },
+    buySectShopItem(itemId, dateKey = getDateKey()) {
+      const result = purchaseSectShopItem(
+        this.sectOperationsState,
+        itemId,
+        this.sectState.contribution,
+        dateKey
+      )
+      if (!result.success) return result
+      this.sectOperationsState = result.state
+      this.sectState = {
+        ...this.sectState,
+        contribution: this.sectState.contribution - result.contributionCost
+      }
+      this.applyResourceReward(result.settlement.reward)
+      this.saveData({ immediate: true })
+      return result
+    },
+    syncMarket(dateKey = getDateKey()) {
+      const next = normalizeMarketState(this.marketState, dateKey)
+      const changed = JSON.stringify(next) !== JSON.stringify(this.marketState)
+      this.marketState = next
+      if (changed) this.saveData({ immediate: true })
+      return this.marketState
+    },
+    getMarketOffers(dateKey = getDateKey()) {
+      return getMarketOffers(this.syncMarket(dateKey), dateKey)
+    },
+    buyMarketOffer(offerId, dateKey = getDateKey()) {
+      const state = this.syncMarket(dateKey)
+      const result = purchaseMarketOffer(state, offerId, this.spiritStones, dateKey)
+      if (!result.success) return result
+      if (!this.payResourceCost({ spiritStones: result.price })) {
+        return { ...result, success: false, reason: 'insufficient_spirit_stones' }
+      }
+      this.marketState = result.state
+      this.applyResourceReward(result.settlement.reward)
+      this.saveData({ immediate: true })
+      return result
+    },
+    refreshMarket(dateKey = getDateKey()) {
+      const state = this.syncMarket(dateKey)
+      const result = refreshMarket(state, this.spiritStones, dateKey)
+      if (!result.success) return result
+      if (!this.payResourceCost({ spiritStones: result.price })) {
+        return { ...result, success: false, reason: 'insufficient_spirit_stones' }
+      }
+      this.marketState = result.state
+      this.saveData({ immediate: true })
+      return result
+    },
+    changeCaveDuty(facilityId, now = Date.now()) {
+      const result = changeCaveFacility(this.caveState, facilityId, {
+        now,
+        spiritRate: this.effectiveSpiritRate
+      })
+      if (!result.success) return result
+      this.caveState = result.state
+      this.recordStagePreparation('cave', { amount: 1, action: `洞府值守：${facilityId}` })
+      this.saveData({ immediate: true })
+      return result
+    },
+    settleCaveProgress(now = Date.now()) {
+      const result = settleCaveOffline(this.caveState, {
+        now,
+        spiritRate: this.effectiveSpiritRate
+      })
+      this.caveState = result.state
+      this.saveData({ immediate: true })
+      return result
+    },
+    claimCavePending(now = Date.now()) {
+      const settled = settleCaveOffline(this.caveState, {
+        now,
+        spiritRate: this.effectiveSpiritRate
+      })
+      const result = claimCaveRewards(settled.state, now)
+      this.caveState = result.state
+      if (!result.success) return result
+      this.applyResourceReward(result.settlement.reward)
+      this.recordStagePreparation('cave', { amount: 1, action: '领取洞府离线收益' })
+      this.saveData({ immediate: true })
+      return result
     },
     unlockTechnique(skillId, duplicateFragments = 0) {
       const result = applySkillReward({
@@ -578,13 +993,30 @@ export const usePlayerStore = defineStore('player', {
       return { success: true, cost, heal: recovery.heal }
     },
     // 修炼增加修为
-    cultivate(amount) {
+    cultivate(amount, { source = 'manual', spiritCost = 0, attempts = 1 } = {}) {
       // 确保amount是数字类型
       const numAmount = Number(String(amount).replace(/[^0-9.-]/g, '')) || 0
       this.cultivation = Number(String(this.cultivation).replace(/[^0-9.-]/g, '')) || 0
-      this.cultivation += numAmount * this.cultivationRate
+      const effectiveGain = numAmount * this.effectiveCultivationRate
+      this.cultivation += effectiveGain
+      this.recordStagePreparation('cultivation', {
+        amount: Math.max(0.1, Number(attempts) || 1),
+        cost: spiritCost,
+        action: source === 'manual' ? '手动修炼' : source === 'auto' ? '自动修炼' : '闭关修炼'
+      })
       this.totalCultivationTime += 1 // 增加修炼时间统计
+      recordCultivationTelemetry({
+        source,
+        attempts,
+        spiritSpent: spiritCost,
+        rawGain: numAmount,
+        effectiveGain
+      })
+      this.recordTaskEvent('cultivation')
       this.saveData()
+    },
+    getCultivationTelemetry() {
+      return getCultivationTelemetry()
     },
     // 尝试突破
     tryBreakthrough(roll = Math.random()) {
@@ -598,13 +1030,17 @@ export const usePlayerStore = defineStore('player', {
         luck: this.luck,
         cultivation: this.cultivation,
         maxCultivation: this.maxCultivation,
-        roll
+        roll,
+        chanceBonus: this.stageStrategy.chanceBonus,
+        lossMultiplier: this.stageStrategy.lossMultiplier
       })
       if (!outcome.ready) {
         return outcome
       }
       this.cultivation = outcome.cultivationAfter
       if (!outcome.success) {
+        const settledGoal = this.settleStageGoal({ success: false, reason: `${this.stageStrategy.name}突破失败，损失${outcome.loss}修为`, settledAt: Date.now() })
+        this.stageGoal = restartStageGoal(settledGoal, this.level, Date.now())
         this.saveData({ immediate: true })
         return outcome
       }
@@ -623,6 +1059,8 @@ export const usePlayerStore = defineStore('player', {
         // 突破奖励
         this.spirit += 100 * this.level // 获得灵力奖励
         this.spiritRate *= 1.2 // 提升灵力获取倍率
+        const settledGoal = this.settleStageGoal({ success: true, reason: `${this.stageStrategy.name}突破成功：${this.realm}`, settledAt: Date.now() })
+        this.stageGoal = restartStageGoal(settledGoal, this.level, Date.now())
         this.saveData({ immediate: true })
         return { ...outcome, realm: this.realm }
       }
@@ -658,6 +1096,7 @@ export const usePlayerStore = defineStore('player', {
           if (index > -1) {
             this.items.splice(index, 1)
           }
+          this.recordStagePreparation('equipment', { amount: 1, action: '整理装备' })
           this.saveData()
           worker.terminate()
           resolve({ success: true, message: `成功卖出装备，获得${stoneAmount}个强化石` })
@@ -680,6 +1119,12 @@ export const usePlayerStore = defineStore('player', {
           const { totalStones, itemsToRemove, count } = e.data
           this.reinforceStones += totalStones
           this.items = this.items.filter(item => !itemsToRemove.includes(item.id))
+          if (count > 0) {
+            this.recordStagePreparation('equipment', {
+              amount: count,
+              action: `batch equipment整理:${count}`
+            })
+          }
           this.saveData()
           worker.terminate()
           resolve({
@@ -762,6 +1207,7 @@ export const usePlayerStore = defineStore('player', {
           effect: effect
         })
         this.pillsCrafted++
+        this.recordStagePreparation('alchemy', { amount: 1, action: `炼制丹药：${recipe.name}` })
         this.saveData()
       }
       return result
@@ -874,6 +1320,11 @@ export const usePlayerStore = defineStore('player', {
       }
       // 穿上新装备
       this.equippedArtifacts[slot] = artifact
+      this.recordTaskEvent('equipment')
+      this.recordStagePreparation('equipment', {
+        amount: 1,
+        action: `equipment:${artifact.name || slot}`
+      })
       // 应用装备加成
       if (artifact.stats) {
         Object.entries(artifact.stats).forEach(([key, value]) => {
@@ -956,7 +1407,7 @@ export const usePlayerStore = defineStore('player', {
         return { success: false, message: '未掌握丹方' }
       }
       const fragments = this.pillFragments[recipeId] || 0
-      const result = tryCreatePill(recipe, this.herbs, this, fragments, this.luck * this.alchemyRate)
+      const result = tryCreatePill(recipe, this.herbs, this, fragments, this.luck * this.effectiveAlchemyRate)
       if (result.success) {
         // 消耗材料
         recipe.materials.forEach(material => {
@@ -978,6 +1429,11 @@ export const usePlayerStore = defineStore('player', {
         }
         this.items.push(pill)
         this.pillsCrafted++
+        this.recordTaskEvent('alchemy')
+        this.recordStagePreparation('alchemy', {
+          amount: 1,
+          action: `alchemy:${recipe.name}`
+        })
         this.saveData()
       }
       return result
@@ -997,6 +1453,7 @@ export const usePlayerStore = defineStore('player', {
         if (index > -1) {
           this.items.splice(index, 1)
           this.pillsConsumed++
+          this.recordStagePreparation('alchemy', { amount: 1, action: `服用丹药：${item.name}` })
         }
         // 清理过期效果
         this.activeEffects = this.activeEffects.filter(effect => effect.endTime > now)
