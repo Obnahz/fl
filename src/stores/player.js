@@ -6,8 +6,8 @@ import {
   calculatePillEffect,
   normalizeActivePillEffects
 } from '../plugins/pills'
-import { encryptData, decryptData, validateData } from '../plugins/crypto'
-import { MAX_SAVE_BYTES } from '../plugins/saveLimits'
+import { encryptData, decryptData, encryptCompactData, decryptCompactData, validateData } from '../plugins/crypto'
+import { MAX_EXPORT_SAVE_BYTES, MAX_SAVE_BYTES } from '../plugins/saveLimits'
 import { getRealmAttributeDelta, getRealmName, getRealmLength, migrateRealmAttributes } from '../plugins/realm'
 import {
   calculateBreakthroughOutcome,
@@ -604,8 +604,14 @@ export const usePlayerStore = defineStore('player', {
     async exportData() {
       try {
         await this.saveData({ immediate: true })
-        const data = await GameDB.getData('playerData')
-        return data
+        const encrypted = await GameDB.getData('playerData')
+        const snapshot = decryptData(encrypted)
+        if (!snapshot || !validateData(snapshot)) throw new Error('存档内容无效或已损坏')
+        const compact = await encryptCompactData(snapshot)
+        if (new Blob([compact]).size > MAX_EXPORT_SAVE_BYTES) {
+          throw new Error('完整存档压缩后仍超过 1 MB，请清理历史记录后重试')
+        }
+        return compact
       } catch (error) {
         console.error('导出存档失败:', error)
         throw error
@@ -614,9 +620,11 @@ export const usePlayerStore = defineStore('player', {
     // 导入存档数据
     async importData(encryptedData) {
       if (typeof encryptedData !== 'string' || encryptedData.length === 0) throw new Error('存档文件为空')
-      if (encryptedData.length > MAX_SAVE_BYTES) throw new Error('存档文件超过 8 MB 限制')
+      if (new Blob([encryptedData]).size > MAX_SAVE_BYTES) throw new Error('存档文件不能超过 8 MB')
 
-      const decryptedData = decryptData(encryptedData)
+      const decryptedData = encryptedData.startsWith('XJ2C:')
+        ? await decryptCompactData(encryptedData)
+        : decryptData(encryptedData)
       if (!decryptedData || !validateData(decryptedData)) throw new Error('存档内容无效或已损坏')
       const migratedData = this.migrateSave(decryptedData)
       if (!validateData(migratedData)) throw new Error('存档迁移失败')

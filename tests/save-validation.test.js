@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 
-import { validateData } from '../src/plugins/crypto.js'
-import { MAX_SAVE_BYTES } from '../src/plugins/saveLimits.js'
+import { validateData, encryptCompactData, decryptCompactData } from '../src/plugins/crypto.js'
+import { MAX_EXPORT_SAVE_BYTES, MAX_SAVE_BYTES } from '../src/plugins/saveLimits.js'
 
 const validSave = {
   saveVersion: 3,
@@ -22,9 +23,27 @@ test('结构完整的存档可以通过校验', () => {
   assert.equal(validateData(validSave), true)
 })
 
-test('新版存档导入上限可容纳 1.0.5 大型存档', () => {
+test('旧存档导入仍支持 8 MB，新导出限制为 1 MB', () => {
   assert.equal(MAX_SAVE_BYTES, 8 * 1024 * 1024)
-  assert.ok(4_346_668 < MAX_SAVE_BYTES)
+  assert.equal(MAX_EXPORT_SAVE_BYTES, 1024 * 1024)
+})
+
+test('导入界面保留旧版 8 MB 存档兼容性', () => {
+  const settingsSource = fs.readFileSync(new URL('../src/views/Settings.vue', import.meta.url), 'utf8')
+  assert.match(settingsSource, /MAX_SAVE_BYTES/)
+  assert.doesNotMatch(settingsSource, /file\.size\s*>\s*1024\s*\*\s*1024/)
+})
+
+test('紧凑存档压缩加密后可无损还原', async () => {
+  const source = {
+    ...validSave,
+    items: Array.from({ length: 1200 }, (_, index) => ({ id: `item_${index % 20}`, name: '重复装备名称', stats: { attack: 10, defense: 5 } })),
+    dailyState: { history: Array.from({ length: 500 }, () => ({ status: 'settled', action: 'cultivation' })) }
+  }
+  const encoded = await encryptCompactData(source)
+  assert.ok(encoded.startsWith('XJ2C:'))
+  assert.deepEqual(await decryptCompactData(encoded), source)
+  assert.ok(new Blob([encoded]).size < JSON.stringify(source).length)
 })
 
 test('拒绝非对象与关键嵌套字段为空的存档', () => {

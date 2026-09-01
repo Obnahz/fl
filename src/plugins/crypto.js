@@ -2,6 +2,52 @@
 import CryptoJS from 'crypto-js'
 import { STAGE_GOAL_VERSION, STAGE_PREPARATION_KEYS } from './stageGoals.js'
 
+export const COMPACT_SAVE_PREFIX = 'XJ2C:'
+
+const bytesToBase64 = bytes => {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+  return btoa(binary)
+}
+
+const base64ToBytes = value => {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
+}
+
+const compressText = async text => {
+  if (typeof CompressionStream === 'undefined') return new TextEncoder().encode(text)
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+const decompressText = async bytes => {
+  if (typeof DecompressionStream === 'undefined') return new TextDecoder().decode(bytes)
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+  return new TextDecoder().decode(await new Response(stream).arrayBuffer())
+}
+
+// Export format: gzip the complete JSON snapshot before AES encryption. No state is discarded.
+export const encryptCompactData = async data => {
+  const json = JSON.stringify(data)
+  const compressed = await compressText(json)
+  const encrypted = CryptoJS.AES.encrypt(bytesToBase64(compressed), 'vue-idle-xiuxian').toString()
+  return `${COMPACT_SAVE_PREFIX}${encrypted}`
+}
+
+export const decryptCompactData = async payload => {
+  if (typeof payload !== 'string' || !payload.startsWith(COMPACT_SAVE_PREFIX)) return null
+  const bytes = CryptoJS.AES.decrypt(payload.slice(COMPACT_SAVE_PREFIX.length), 'vue-idle-xiuxian')
+  const compressedBase64 = bytes.toString(CryptoJS.enc.Utf8)
+  if (!compressedBase64) return null
+  return JSON.parse(await decompressText(base64ToBytes(compressedBase64)))
+}
+
 // 数据加密
 export const encryptData = data => {
   try {

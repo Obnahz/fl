@@ -38,6 +38,7 @@
   import { ref } from 'vue'
   import { useDialog, useMessage } from 'naive-ui'
   import { saveAs } from 'file-saver'
+  import { MAX_SAVE_BYTES } from '../plugins/saveLimits'
 
   const clickCount = ref(0)
   const newName = ref('')
@@ -73,8 +74,8 @@
       message.error('无法读取所选存档文件。')
       return
     }
-    if (file.size > 1024 * 1024) {
-      message.error('存档文件不能超过 1 MB。')
+    if (file.size > MAX_SAVE_BYTES) {
+      message.error('存档文件不能超过 8 MB。')
       return
     }
     const reader = new FileReader()
