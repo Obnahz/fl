@@ -1203,7 +1203,7 @@ export const usePlayerStore = defineStore('player', {
           if (count > 0) {
             this.recordStagePreparation('equipment', {
               amount: count,
-              action: `batch equipment整理:${count}`
+              action: `批量整理装备:${count}`
             })
           }
           this.saveData()

@@ -1,10 +1,10 @@
 <template>
-  <div v-if="!playerStore.isNewPlayer" class="utility-bar" aria-label="Global utilities">
-    <n-button size="small" secondary @click="save">Save</n-button>
-    <n-button size="small" secondary :disabled="!canGoBack" @click="goBack">Back</n-button>
-    <n-button size="small" secondary @click="scrollTop">Top</n-button>
-    <n-button size="small" type="primary" @click="openInventory">Inventory</n-button>
-    <span v-if="savedAt" class="save-state">Saved {{ savedAt }}</span>
+  <div v-if="!playerStore.isNewPlayer" class="utility-bar" aria-label="全局快捷操作">
+    <n-button size="small" secondary @click="save">保存</n-button>
+    <n-button size="small" secondary :disabled="!canGoBack" @click="goBack">返回</n-button>
+    <n-button size="small" secondary @click="scrollTop">回到顶部</n-button>
+    <n-button size="small" type="primary" @click="openInventory">背包</n-button>
+    <span v-if="savedAt" class="save-state">已保存 {{ savedAt }}</span>
   </div>
 </template>
 
