@@ -153,11 +153,13 @@ const clampRoll = value => (Number.isFinite(value) ? Math.min(0.999999, Math.max
 const pick = (values, roll) => values[Math.floor(clampRoll(roll) * values.length)]
 
 const getQuality = (tier, playerLevel, roll) => {
-  const progress = Math.min(1, Math.max(0, (Number(playerLevel) + (Number(tier) - 1) * 8 - 1) / 99))
+  const normalizedTier = Math.min(13, Math.max(1, Number(tier) || 1))
+  const progress = Math.min(1, Math.max(0, (Number(playerLevel) - 1) / 99))
   const earlyThresholds = [0.65, 0.93, 0.99, 0.998, 0.9998]
   const lateThresholds = [0.35, 0.72, 0.92, 0.985, 0.998]
   const thresholds = earlyThresholds.map((value, index) => value + (lateThresholds[index] - value) * progress)
-  const value = clampRoll(roll)
+  const tierQualityBonus = Math.min(0.08, (normalizedTier - 1) * 0.006)
+  const value = clampRoll(clampRoll(roll) - tierQualityBonus)
   const qualityIndex = thresholds.findIndex(threshold => value < threshold)
   return QUALITY_ORDER[qualityIndex === -1 ? QUALITY_ORDER.length - 1 : qualityIndex]
 }

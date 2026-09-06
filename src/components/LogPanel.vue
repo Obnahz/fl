@@ -52,11 +52,6 @@
       if (e.data.type === 'LOGS_UPDATED') {
         logs.value = e.data.logs
         // 下一帧滚动到底部
-        setTimeout(() => {
-          if (scrollRef.value) {
-            scrollRef.value.scrollTo({ top: 99999, behavior: 'smooth' })
-          }
-        })
       }
     }
   })
@@ -89,9 +84,9 @@
   watch(
     () => logs.value.length,
     () => {
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         if (scrollRef.value) {
-          scrollRef.value.scrollTo({ top: 99999, behavior: 'smooth' })
+          scrollRef.value.scrollTo({ top: 99999, behavior: 'auto' })
         }
       })
     }

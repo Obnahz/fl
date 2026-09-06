@@ -1200,7 +1200,8 @@ export const usePlayerStore = defineStore('player', {
         worker.onmessage = e => {
           const { totalStones, itemsToRemove, count } = e.data
           this.reinforceStones += totalStones
-          this.items = this.items.filter(item => !itemsToRemove.includes(item.id))
+          const removedIds = new Set(itemsToRemove)
+          this.items = this.items.filter(item => !removedIds.has(item.id))
           if (count > 0) {
             this.recordStagePreparation('equipment', {
               amount: count,
