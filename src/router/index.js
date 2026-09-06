@@ -15,6 +15,7 @@ const routes = [
   { path: '/alchemy', name: 'Alchemy', component: () => import('../views/Alchemy.vue') },
   { path: '/dungeon', name: 'Dungeon', component: () => import('../views/Dungeon.vue') },
   { path: '/market', name: 'Market', component: () => import('../views/Market.vue') },
+  // Legacy bookmarks enter the market after the lottery system was removed.
   { path: '/gacha', redirect: '/market' },
   {
     path: '/gm',

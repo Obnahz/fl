@@ -7,6 +7,10 @@
     </n-layout-header>
     <n-layout-content>
       <n-card :bordered="false">
+        <div class="inventory-toolbar">
+          <n-input v-model:value="inventorySearch" clearable placeholder="搜索装备名称" />
+          <n-select v-model:value="inventorySort" :options="inventorySortOptions" style="min-width: 140px" />
+        </div>
         <n-tabs type="line">
           <n-tab-pane name="equipment" tab="装备">
             <section class="equipment-summary" aria-label="装备总览">
@@ -35,7 +39,28 @@
               </n-tag>
               <n-text depth="3" v-if="activeSetStates.length === 0">尚未形成套装</n-text>
             </n-space>
-            <n-grid responsive="screen" cols="1 s:2 m:3" :x-gap="12" :y-gap="8">
+            <div class="equipment-quick-list">
+              <div v-for="(name, type) in equipmentTypes" :key="type" class="equipment-quick-row">
+                <div class="equipment-quick-slot">{{ name }}</div>
+                <div class="equipment-quick-current" @click="showEquipmentDetails(playerStore.equippedArtifacts[type])">
+                  <template v-if="playerStore.equippedArtifacts[type]">
+                    <strong>{{ playerStore.equippedArtifacts[type].name }}</strong>
+                    <span>{{ getEquipmentScore(playerStore.equippedArtifacts[type]) }}</span>
+                  </template>
+                  <span v-else class="muted">未装备</span>
+                </div>
+                <div class="equipment-quick-recommend">
+                  <template v-if="recommendedBySlot[type]">
+                    <strong>{{ recommendedBySlot[type].name }}</strong>
+                    <span class="upgrade-positive">+{{ getEquipmentComparison(recommendedBySlot[type]).difference }}</span>
+                    <n-button size="small" type="primary" @click="equipItem(recommendedBySlot[type])">替换</n-button>
+                  </template>
+                  <span v-else class="muted">暂无更优装备</span>
+                </div>
+                <n-button size="small" secondary @click="showEquipmentList(type)">查看全部</n-button>
+              </div>
+            </div>
+            <n-grid v-if="false" responsive="screen" cols="1 s:2 m:3" :x-gap="12" :y-gap="8">
               <n-grid-item v-for="(name, type) in equipmentTypes" :key="type">
                 <n-card size="small" hoverable @click="showEquipmentList(type)">
                   <template #header>
@@ -85,10 +110,15 @@
                 <n-card hoverable>
                   <template #header>
                     <n-space justify="space-between">
-                      <span>{{ herb.name }}({{ herb.count }})</span>
+                      <span>{{ herb.name }} × {{ herb.count }}</span>
+                      <n-tag size="small" :style="{ color: herb.qualityInfo.color }">{{ herb.qualityInfo.name }}</n-tag>
                     </n-space>
                   </template>
                   <p>{{ herb.description }}</p>
+                  <n-space size="small">
+                    <n-text depth="3">单株价值 {{ herb.value }}</n-text>
+                    <n-text depth="3">总价值 {{ herb.value * herb.count }}</n-text>
+                  </n-space>
                 </n-card>
               </n-grid-item>
             </n-grid>
@@ -100,11 +130,13 @@
                 <n-card hoverable>
                   <template #header>
                     <n-space justify="space-between">
-                      <span>{{ pill.name }}({{ pill.count }})</span>
+                      <span>{{ pill.name }} × {{ pill.count }}</span>
+                      <n-tag size="small" :style="{ color: pill.qualityInfo?.color }">{{ pill.qualityInfo?.name || '凡品' }}</n-tag>
                       <n-button size="small" type="primary" @click="usePill(pill)">服用</n-button>
                     </n-space>
                   </template>
                   <p>{{ pill.description }}</p>
+                  <n-text depth="3">{{ getPillEffectSummary(pill) }}</n-text>
                 </n-card>
               </n-grid-item>
             </n-grid>
@@ -377,6 +409,9 @@
     <n-space vertical>
       <n-space justify="space-between">
         <n-select v-model:value="selectedQuality" :options="qualityOptions" style="width: 150px" />
+        <n-switch v-model:value="onlyUpgrades" />
+        <n-select v-model:value="equipmentSort" :options="equipmentSortOptions" style="width: 140px" />
+        <n-button type="primary" :disabled="!recommendedEquipment.length" @click="equipRecommended">一键装备推荐</n-button>
         <n-button type="warning" :disabled="filteredEquipmentList.length === 0" @click="batchSellEquipments">
           一键卖出
         </n-button>
@@ -603,6 +638,7 @@
     reforgeEquipment
   } from '../plugins/equipment'
   import { compareEquipment, EQUIPMENT_SETS, getEquipmentScore } from '../plugins/equipmentRules'
+  import { getQualityInfo, normalizeQuality } from '../plugins/quality'
 
   // 分页相关
   const currentPage = ref(1)
@@ -645,36 +681,11 @@
 
   // 灵宠品质配置
   const petRarities = {
-    divine: {
-      name: '神品',
-      color: '#FF0000',
-      probability: 0.02,
-      essenceBonus: 50
-    },
-    celestial: {
-      name: '仙品',
-      color: '#FFD700',
-      probability: 0.08,
-      essenceBonus: 30
-    },
-    mystic: {
-      name: '玄品',
-      color: '#9932CC',
-      probability: 0.15,
-      essenceBonus: 20
-    },
-    spiritual: {
-      name: '灵品',
-      color: '#1E90FF',
-      probability: 0.25,
-      essenceBonus: 10
-    },
-    mortal: {
-      name: '凡品',
-      color: '#32CD32',
-      probability: 0.5,
-      essenceBonus: 5
-    }
+    mythic: { name: '仙品', color: '#d97706', probability: 0.08, essenceBonus: 30 },
+    epic: { name: '上品', color: '#7c3aed', probability: 0.15, essenceBonus: 20 },
+    rare: { name: '中品', color: '#2563eb', probability: 0.25, essenceBonus: 10 },
+    uncommon: { name: '下品', color: '#2f855a', probability: 0.3, essenceBonus: 7 },
+    common: { name: '凡品', color: '#6b7280', probability: 0.22, essenceBonus: 5 }
   }
 
   // 灵宠详情相关
@@ -704,7 +715,7 @@
     if (petToRelease.value) {
       // 如果灵宠正在出战，先取消出战
       if (playerStore.activePet?.id === petToRelease.value.id) {
-        playerStore.activePet = null
+        playerStore.recallPet()
       }
       // 从背包中移除灵宠
       const index = playerStore.items.findIndex(item => item.id === petToRelease.value.id)
@@ -729,7 +740,7 @@
       item =>
         item.type !== 'pet' ||
         item.id === playerStore.activePet?.id ||
-        (selectedRarityToRelease.value !== 'all' && item.rarity !== selectedRarityToRelease.value)
+        (selectedRarityToRelease.value !== 'all' && normalizeQuality(item.quality || item.rarity) !== selectedRarityToRelease.value)
     )
     showBatchReleaseConfirm.value = false
     message.success(
@@ -749,22 +760,9 @@
   // 计算灵宠属性加成
   const getPetBonus = pet => {
     if (!pet) return { attack: 0, defense: 0, health: 0 }
-    const qualityBonusMap = {
-      divine: 0.5,
-      celestial: 0.3,
-      mystic: 0.2,
-      spiritual: 0.1,
-      mortal: 0.05
-    }
-    const starBonusPerQuality = {
-      divine: 0.1,
-      celestial: 0.08,
-      mystic: 0.06,
-      spiritual: 0.04,
-      mortal: 0.02
-    }
-    const baseBonus = qualityBonusMap[pet.rarity] || 0.05
-    const starBonus = (pet.star || 0) * (starBonusPerQuality[pet.rarity] || 0.02)
+    const quality = normalizeQuality(pet.quality || pet.rarity)
+    const baseBonus = { common: 0.05, uncommon: 0.1, rare: 0.2, epic: 0.3, mythic: 0.4 }[quality] || 0.05
+    const starBonus = (pet.star || 0) * (quality === 'mythic' ? 0.08 : 0.04)
     const totalBonus = baseBonus + starBonus
     const phase = Math.floor((pet.star || 0) / 5)
     const phaseBonus = phase * (baseBonus * 0.5)
@@ -796,7 +794,7 @@
           item.type === 'pet' &&
           item.id !== pet.id &&
           item.star === pet.star &&
-          item.rarity === pet.rarity &&
+          normalizeQuality(item.quality || item.rarity) === normalizeQuality(pet.quality || pet.rarity) &&
           item.name === pet.name
       )
       .map(item => ({
@@ -919,6 +917,22 @@
   const selectedQuality = ref('all')
   const currentEquipmentPage = ref(1)
   const equipmentPageSize = ref(8)
+  const equipmentSort = ref('upgrade')
+  const onlyUpgrades = ref(false)
+  const inventorySearch = ref('')
+  const inventorySort = ref('recommended')
+  const equipmentSortOptions = [
+    { label: '推荐替换', value: 'upgrade' },
+    { label: '品质优先', value: 'quality' },
+    { label: '战力最高', value: 'score' },
+    { label: '最新获得', value: 'latest' }
+  ]
+  const inventorySortOptions = [
+    { label: '推荐', value: 'recommended' },
+    { label: '品质', value: 'quality' },
+    { label: '数量', value: 'count' },
+    { label: '最新', value: 'latest' }
+  ]
 
   watch(selectedQuality, () => {
     currentEquipmentPage.value = 1
@@ -935,7 +949,6 @@
     return [
       { label: '全部品质', value: 'all' },
       { label: '仙品', value: 'mythic', disabled: !equipmentsByQuality['mythic'] },
-      { label: '极品', value: 'legendary', disabled: !equipmentsByQuality['legendary'] },
       { label: '上品', value: 'epic', disabled: !equipmentsByQuality['epic'] },
       { label: '中品', value: 'rare', disabled: !equipmentsByQuality['rare'] },
       { label: '下品', value: 'uncommon', disabled: !equipmentsByQuality['uncommon'] },
@@ -948,11 +961,44 @@
     let list = playerStore.items.filter(item => {
       if (!selectedEquipmentType.value) return false
       if (item.type !== selectedEquipmentType.value) return false
+      if (inventorySearch.value && !String(item.name || '').toLowerCase().includes(inventorySearch.value.trim().toLowerCase())) return false
       if (selectedQuality.value !== 'all' && item.quality !== selectedQuality.value) return false
+      if (onlyUpgrades.value) {
+        const comparison = getEquipmentComparison(item)
+        if (comparison.verdict !== 'new-slot' && comparison.difference <= 0) return false
+      }
       return true
     })
-    return list
+    const qualityRank = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5, mythic: 6 }
+    return list.sort((a, b) => {
+      if (equipmentSort.value === 'upgrade') {
+        const delta = getEquipmentComparison(b).difference - getEquipmentComparison(a).difference
+        if (delta !== 0) return delta
+      }
+      if (equipmentSort.value === 'quality') return (qualityRank[b.quality] || 0) - (qualityRank[a.quality] || 0)
+      if (equipmentSort.value === 'score') return getEquipmentScore(b) - getEquipmentScore(a)
+      if (equipmentSort.value === 'latest') return (Number(b.obtainedAt) || 0) - (Number(a.obtainedAt) || 0)
+      return getEquipmentScore(b) - getEquipmentScore(a)
+    })
   })
+
+  const recommendedEquipment = computed(() => {
+    const bestBySlot = new Map()
+    playerStore.items.filter(item => item?.slot && equipmentTypes[item.slot]).forEach(item => {
+      const comparison = getEquipmentComparison(item)
+      if (comparison.verdict !== 'new-slot' && comparison.difference <= 0) return
+      const current = bestBySlot.get(item.slot)
+      if (!current || comparison.difference > getEquipmentComparison(current).difference) bestBySlot.set(item.slot, item)
+    })
+    return [...bestBySlot.values()]
+  })
+
+  const recommendedBySlot = computed(() => Object.fromEntries(recommendedEquipment.value.map(item => [item.slot, item])))
+
+  const equipRecommended = () => {
+    recommendedEquipment.value.forEach(item => playerStore.equipArtifact(item, item.slot || item.type))
+    message.success('已装备各部位推荐装备')
+  }
 
   // 当前页显示的装备
   const equipmentList = computed(() => {
@@ -1082,13 +1128,16 @@
   const groupedHerbs = computed(() => {
     const groups = {}
     playerStore.herbs.forEach(herb => {
-      if (!groups[herb.name]) {
-        groups[herb.name] = {
+      const key = `${herb.id}:${herb.quality || 'common'}`
+      if (!groups[key]) {
+        groups[key] = {
           ...herb,
-          count: 1
+          count: 1,
+          id: key,
+          qualityInfo: herb.qualityInfo || getQualityInfo(herb.quality)
         }
       } else {
-        groups[herb.name].count++
+        groups[key].count++
       }
     })
     return Object.values(groups)
@@ -1141,17 +1190,30 @@
     playerStore.items
       .filter(item => item.type === 'pill')
       .forEach(pill => {
-        if (!groups[pill.name]) {
-          groups[pill.name] = {
+        const key = `${pill.name}:${pill.quality || 'common'}`
+        if (!groups[key]) {
+          groups[key] = {
             ...pill,
-            count: 1
+            count: 1,
+            id: key
           }
         } else {
-          groups[pill.name].count++
+          groups[key].count++
         }
       })
     return Object.values(groups)
   })
+
+  const getPillEffectSummary = pill => {
+    const effect = pill?.effect
+    if (!effect) return '暂无效果数据'
+    const labels = {
+      spiritRate: '灵力恢复', cultivationRate: '修炼速度', cultivationEfficiency: '修炼效率',
+      combatBoost: '战斗属性', resistanceBoost: '战斗抗性', allAttributes: '全属性',
+      spiritCap: '灵力上限', autoHeal: '生命恢复', spiritRecovery: '灵力回复', comprehension: '悟性', fireAttribute: '火属性'
+    }
+    return `${labels[effect.type] || '特殊效果'} +${(effect.value * 100).toFixed(1)}%，持续 ${Math.floor(effect.duration / 60)} 分钟`
+  }
   // 使用物品
   const useItem = item => {
     if (item.type === 'pet') {
@@ -1204,15 +1266,44 @@
 
   const options = [
     { label: '全部品阶', value: 'all' },
-    { label: '神品', value: 'divine' },
-    { label: '仙品', value: 'celestial' },
-    { label: '玄品', value: 'mystic' },
-    { label: '灵品', value: 'spiritual' },
-    { label: '凡品', value: 'mortal' }
+    { label: '仙品', value: 'mythic' },
+    { label: '上品', value: 'epic' },
+    { label: '中品', value: 'rare' },
+    { label: '下品', value: 'uncommon' },
+    { label: '凡品', value: 'common' }
   ]
 </script>
 
 <style scoped>
+  .inventory-toolbar {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .equipment-quick-list {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .equipment-quick-row {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) minmax(0, 1.3fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface) 92%, var(--jade-pale));
+  }
+  .equipment-quick-slot { color: var(--jade-deep); font-weight: 700; }
+  .equipment-quick-current,
+  .equipment-quick-recommend { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .equipment-quick-current strong,
+  .equipment-quick-recommend strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .equipment-quick-current span,
+  .equipment-quick-recommend span { color: var(--n-text-color-3); font-size: 12px; }
+  .upgrade-positive { color: var(--success-color) !important; font-weight: 700; }
+  .muted { color: var(--n-text-color-3); }
   .equipment-summary {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1306,9 +1397,16 @@
   }
 
   @media (max-width: 520px) {
+    .inventory-toolbar {
+      grid-template-columns: 1fr;
+    }
     .equipment-summary {
       grid-template-columns: 1fr;
     }
+    .equipment-quick-row {
+      grid-template-columns: 60px minmax(0, 1fr) auto;
+    }
+    .equipment-quick-recommend { grid-column: 2 / -1; }
 
     .equipment-actions,
     .equipment-actions > .n-space {

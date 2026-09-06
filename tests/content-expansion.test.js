@@ -5,6 +5,8 @@ import { TECHNIQUES, getTechniqueAtLevel } from '../src/plugins/techniques.js'
 import { locations } from '../src/plugins/locations.js'
 import { getBossForLocation, getEnemiesForLocation } from '../src/plugins/enemies.js'
 import { createEquipmentDrop, EQUIPMENT_SETS } from '../src/plugins/equipmentRules.js'
+import { getRandomHerb, herbs } from '../src/plugins/herbs.js'
+import { pillRecipes } from '../src/plugins/pills.js'
 
 test('内容扩充覆盖中后期功法与秘境进度', () => {
   assert.ok(TECHNIQUES.length >= 5)
@@ -32,4 +34,24 @@ test('高阶装备掉落与套装数据可用', () => {
   assert.ok(Object.values(drop.stats).every(value => Number.isFinite(value) && value > 0))
   assert.ok(EQUIPMENT_SETS.yanling)
   assert.ok(EQUIPMENT_SETS.xingyun)
+})
+
+test('V2.7 extends progression through the Daluo realm with linked rewards', () => {
+  for (const locationId of ['daluo_skyline', 'origin_dao_temple', 'daluo_origin_gate']) {
+    assert.equal(getEnemiesForLocation(locationId).length, 2)
+    assert.ok(getBossForLocation(locationId)?.rewards.some(reward => reward.type === 'skill'))
+  }
+  assert.equal(locations.find(location => location.id === 'daluo_origin_gate')?.minLevel, 122)
+  assert.ok(EQUIPMENT_SETS.daluo_origin)
+  assert.ok(getTechniqueAtLevel('heavenly_thunder_gate', 5).damageMultiplier > 2)
+})
+
+test('V2.7 herbs and recipes remain obtainable without realm-exclusive quality locks', () => {
+  const earlyHerb = getRandomHerb(1, { herb: 0.999999, quality: 0.999999 })
+  const lateHerb = getRandomHerb(126, { herb: 0.999999, quality: 0.999999 })
+  assert.equal(earlyHerb.id, 'daluo_fruit')
+  assert.equal(earlyHerb.quality, 'mythic')
+  assert.equal(lateHerb.quality, 'mythic')
+  assert.ok(herbs.some(herb => herb.id === 'heavenly_thunder_bloom'))
+  assert.ok(pillRecipes.some(recipe => recipe.id === 'daluo_guard_pill'))
 })

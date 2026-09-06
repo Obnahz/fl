@@ -4,6 +4,8 @@ import {
   pillRecipes,
   tryCreatePill,
   calculatePillEffect,
+  createQualityPillEffect,
+  normalizePillQuality,
   normalizeActivePillEffects
 } from '../plugins/pills'
 import { encryptData, decryptData, encryptCompactData, decryptCompactData, validateData } from '../plugins/crypto'
@@ -29,12 +31,13 @@ import {
   normalizeUnlockedTechniques,
   selectTechniqueForCombat
 } from '../plugins/techniques'
-import { applyResourceSettlement, applySkillReward } from '../plugins/rewardRules'
+import { applyResourceSettlement, applySkillReward, normalizeExtendedReward } from '../plugins/rewardRules'
 import { buildDungeonPlayerCombatant, resolveAutoCombat } from '../plugins/combatRules'
 import { getCultivationTelemetry, recordCultivationTelemetry } from '../plugins/cultivationTelemetry'
 import { getEnemiesForLocation } from '../plugins/enemies'
 import { locations } from '../plugins/locations'
 import { herbs as herbDefinitions, getHerbValue } from '../plugins/herbs'
+import { getQualityInfo, normalizeQuality } from '../plugins/quality'
 import {
   changeCaveFacility,
   claimCaveRewards,
@@ -130,8 +133,14 @@ export const usePlayerStore = defineStore('player', {
     // 灵宠系统
     activePet: null, // 当前出战的灵宠
     petEssence: 0, // 灵宠精华
+    petAppliedBonus: null,
     petConfig: {
       rarityMap: {
+        mythic: { name: '仙品', color: '#d97706', probability: 0.08, essenceBonus: 30 },
+        epic: { name: '上品', color: '#7c3aed', probability: 0.15, essenceBonus: 20 },
+        rare: { name: '中品', color: '#2563eb', probability: 0.25, essenceBonus: 10 },
+        uncommon: { name: '下品', color: '#2f855a', probability: 0.3, essenceBonus: 7 },
+        common: { name: '凡品', color: '#6b7280', probability: 0.22, essenceBonus: 5 },
         divine: { name: '神品', color: '#FF0000', probability: 0.02, essenceBonus: 50 },
         celestial: { name: '仙品', color: '#FFD700', probability: 0.08, essenceBonus: 30 },
         mystic: { name: '玄品', color: '#9932CC', probability: 0.15, essenceBonus: 20 },
@@ -373,22 +382,9 @@ export const usePlayerStore = defineStore('player', {
           combatBoost: 0,
           resistanceBoost: 0
         }
-      const qualityBonusMap = {
-        divine: 0.15, // 神品基础加成15%
-        celestial: 0.12, // 仙品基础加成12%
-        mystic: 0.09, // 玄品基础加成9%
-        spiritual: 0.06, // 灵品基础加成6%
-        mortal: 0.03 // 凡品基础加成3%
-      }
-      const starBonusPerQuality = {
-        divine: 0.02, // 神品每星+2%
-        celestial: 0.01, // 仙品每星+1%
-        mystic: 0.01, // 玄品每星+1%
-        spiritual: 0.01, // 灵品每星+1%
-        mortal: 0.01 // 凡品每星+1%
-      }
-      const baseBonus = qualityBonusMap[this.activePet.rarity] || 0
-      const starBonus = (this.activePet.star || 0) * (starBonusPerQuality[this.activePet.rarity] || 0)
+      const quality = normalizeQuality(this.activePet.quality || this.activePet.rarity)
+      const baseBonus = { common: 0.03, uncommon: 0.045, rare: 0.06, epic: 0.09, mythic: 0.12 }[quality]
+      const starBonus = (this.activePet.star || 0) * (quality === 'mythic' ? 0.02 : 0.01)
       const levelBonus = ((this.activePet.level || 1) - 1) * (baseBonus * 0.1)
       const totalBonus = baseBonus + starBonus + levelBonus
       const phase = Math.floor((this.activePet.star || 0) / 5)
@@ -487,6 +483,16 @@ export const usePlayerStore = defineStore('player', {
             }
           })
         : []
+      const normalizedItems = Array.isArray(data.items)
+        ? data.items.map(item => {
+            if (item?.type === 'pill') return normalizePillQuality(item)
+            if (item?.type === 'pet') {
+              const quality = normalizeQuality(item.quality || item.rarity)
+              return { ...item, quality, rarity: quality, qualityInfo: getQualityInfo(quality) }
+            }
+            return item
+          })
+        : []
       normalizeUnlockedTechniques(unlockedSkills).forEach(skillId => {
         if (!techniqueLevels[skillId]) techniqueLevels[skillId] = 1
       })
@@ -499,6 +505,7 @@ export const usePlayerStore = defineStore('player', {
         ...this.$state,
         ...data,
         herbs: normalizedHerbs,
+        items: normalizedItems,
         level,
         realm: realm.name,
         maxCultivation: realm.maxCultivation,
@@ -723,6 +730,14 @@ export const usePlayerStore = defineStore('player', {
       if (result.applied.sectContribution) {
         this.sectState = addSectContribution(this.sectState, result.applied.sectContribution)
       }
+      const extended = normalizeExtendedReward(reward)
+      if (extended.petEssence) this.petEssence += extended.petEssence
+      if (extended.herbs) {
+        for (let index = 0; index < extended.herbs; index++) {
+          const definition = herbDefinitions[index % herbDefinitions.length]
+          this.herbs.push({ ...definition, quality: 'common', value: getHerbValue(definition, 'common') })
+        }
+      }
       return {
         ...result,
         resources: { ...result.resources, sectContribution: this.sectState.contribution }
@@ -831,6 +846,7 @@ export const usePlayerStore = defineStore('player', {
             combatResistance: this.combatResistance,
             specialAttributes: this.specialAttributes,
             activeEquipmentSetBonuses: this.activeEquipmentSetBonuses,
+            baseIncludesPet: Boolean(this.activePet),
             getPetBonus: this.getPetBonus,
             activeEffects: this.activeEffects
           },
@@ -1317,6 +1333,16 @@ export const usePlayerStore = defineStore('player', {
     },
     // 重置灵宠属性加成
     resetPetBonuses() {
+      if (!this.petAppliedBonus) return
+      const petBonus = this.petAppliedBonus
+      for (const group of [this.baseAttributes, this.combatAttributes, this.combatResistance, this.specialAttributes]) {
+        for (const [key, value] of Object.entries(petBonus)) {
+          if (key in group) group[key] -= Number(value) || 0
+        }
+      }
+      this.petAppliedBonus = null
+    },
+    /* legacy reset implementation removed
       const petBonus = this.activePet.combatAttributes
       // 保存原始属性值
       const originalBaseAttributes = { ...this.baseAttributes }
@@ -1342,8 +1368,19 @@ export const usePlayerStore = defineStore('player', {
       })
     },
     // 应用灵宠属性加成
+      */
     applyPetBonuses() {
       if (!this.activePet) return
+      this.resetPetBonuses()
+      const petBonus = { ...(this.activePet.combatAttributes || {}) }
+      for (const group of [this.baseAttributes, this.combatAttributes, this.combatResistance, this.specialAttributes]) {
+        for (const [key, value] of Object.entries(petBonus)) {
+          if (key in group) group[key] += Number(value) || 0
+        }
+      }
+      this.petAppliedBonus = petBonus
+      return
+      /* legacy apply implementation
       const petBonus = this.activePet.combatAttributes
       // 保存原始属性值
       const originalBaseAttributes = { ...this.baseAttributes }
@@ -1369,6 +1406,8 @@ export const usePlayerStore = defineStore('player', {
       })
     },
     // 穿上装备
+      */
+    },
     equipArtifact(artifact, slot) {
       // 检查境界要求
       if (artifact.requiredRealm && this.level < artifact.requiredRealm) {
@@ -1484,13 +1523,15 @@ export const usePlayerStore = defineStore('player', {
           }
         })
         // 创建丹药
-        const effect = calculatePillEffect(recipe, this.level)
+        const qualityPill = createQualityPillEffect(recipe, this.level)
         const pill = {
-          id: `${recipe.id}_${Date.now()}`,
+          id: `${recipe.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           name: recipe.name,
           description: recipe.description,
           type: 'pill',
-          effect
+          quality: qualityPill.quality,
+          qualityInfo: qualityPill.qualityInfo,
+          effect: qualityPill.effect
         }
         this.items.push(pill)
         this.pillsCrafted++
@@ -1546,6 +1587,8 @@ export const usePlayerStore = defineStore('player', {
         return { success: false, message: '灵宠精华不足' }
       }
       // 消耗精华并提升等级
+      const wasActive = this.activePet && this.activePet.id === pet.id
+      if (wasActive) this.resetPetBonuses()
       this.petEssence -= essenceCount
       const petIndex = this.items.findIndex(item => item.id === pet.id)
       if (petIndex > -1) {
@@ -1554,12 +1597,12 @@ export const usePlayerStore = defineStore('player', {
         // 根据品质和等级提升战斗属性
         const qualityMultiplier =
           {
-            divine: 2.0,
-            celestial: 1.8,
-            mystic: 1.6,
-            spiritual: 1.4,
-            mortal: 1.2
-          }[currentPet.rarity] || 1.2
+            common: 1.2,
+            uncommon: 1.4,
+            rare: 1.6,
+            epic: 1.8,
+            mythic: 2.0
+          }[normalizeQuality(currentPet.quality || currentPet.rarity)] || 1.2
         // 更新战斗属性
         currentPet.combatAttributes = {
           attack: Math.floor(currentPet.combatAttributes.attack * (1 + 0.01 * qualityMultiplier)),
@@ -1590,7 +1633,7 @@ export const usePlayerStore = defineStore('player', {
           resistanceBoost: currentPet.combatAttributes.resistanceBoost + 0.01 * qualityMultiplier
         }
         // 如果是当前出战的灵宠，重新应用属性加成
-        if (this.activePet && this.activePet.id === pet.id) {
+        if (wasActive) {
           this.applyPetBonuses()
         }
       }
@@ -1600,7 +1643,7 @@ export const usePlayerStore = defineStore('player', {
     // 升星灵宠
     evolvePet(pet, foodPet) {
       // 检查是否是相同品质和名字的灵宠
-      if (pet.rarity != foodPet.rarity || pet.name != foodPet.name) {
+      if (normalizeQuality(pet.quality || pet.rarity) !== normalizeQuality(foodPet.quality || foodPet.rarity) || pet.name != foodPet.name) {
         return { success: false, message: '只能使用相同品质和名字的灵宠进行升星' }
       }
       const petIndex = this.items.findIndex(item => item.id === pet.id)

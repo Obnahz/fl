@@ -102,6 +102,7 @@
                   </div>
                 </section>
 
+                <GlobalUtilityBar />
                 <router-view />
               </div>
             </n-layout-content>
@@ -138,6 +139,7 @@
   import { getSpiritualRoot } from './plugins/gameRules'
   import { STAGE_PREPARATION_KEYS } from './plugins/stageGoals'
   import { usePlayerStore } from './stores/player'
+  import GlobalUtilityBar from './components/GlobalUtilityBar.vue'
 
   const router = useRouter()
   const route = useRoute()

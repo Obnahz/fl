@@ -21,6 +21,9 @@ self.onmessage = ({ data }) => {
         special: Math.random(),
         specialType: Math.random(),
         reward: Math.random(),
+        pet: Math.random(),
+        quality: Math.random(),
+        species: Math.random(),
         amount: Math.random(),
         bonus: Math.random()
       }

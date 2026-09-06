@@ -117,7 +117,9 @@ export const handleReward = (reward, playerStore, showMessage, options = {}) => 
     case 'herb':
       // 获取指定数量的随机灵草
       for (let i = 0; i < settledReward.amount; i++) {
-        const herb = getRandomHerb()
+        const herb = getRandomHerb(
+          (Number(playerStore.level) || 1) + Math.max(0, (Number(settledReward.tier) || 1) - 1) * 8
+        )
         if (herb) {
           playerStore.herbs.push(herb)
           showMessage('success', `[灵草获取]获得${herbQualities[herb.quality].name}品质的${herb.name}`)
@@ -161,6 +163,14 @@ export const handleReward = (reward, playerStore, showMessage, options = {}) => 
         'success',
         `[装备获取]获得${equipment.qualityInfo.name}${equipment.name}（${setName}），战力 ${getEquipmentScore(equipment)}，${comparisonText}`
       )
+      break
+    }
+    case 'pet': {
+      if (settledReward.pet) {
+        playerStore.gainItem(settledReward.pet)
+        const rarityName = playerStore.petConfig?.rarityMap?.[settledReward.pet.rarity]?.name || settledReward.pet.rarity
+        showMessage('success', `[灵兽获取]历练中收服了${rarityName}灵兽${settledReward.pet.name}`)
+      }
       break
     }
     case 'skill': {

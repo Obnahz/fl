@@ -13,6 +13,11 @@ const RESOURCE_REWARD_KEYS = [
   'sectContribution'
 ]
 
+export const normalizeExtendedReward = reward => ({
+  herbs: Math.max(0, Math.floor(Number(reward?.herbs) || 0)),
+  petEssence: Math.max(0, Math.floor(Number(reward?.petEssence) || 0))
+})
+
 const normalizeResourceAmount = value => {
   const amount = Number(value)
   return Number.isFinite(amount) && amount > 0 ? Math.floor(amount) : 0

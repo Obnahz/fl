@@ -1,82 +1,111 @@
 <template>
-  <n-card title="丹药炼制">
-    <n-space vertical>
-      <template v-if="unlockedRecipes.length > 0">
-        <n-divider>丹方选择</n-divider>
-        <!-- 丹方选择 -->
-        <n-grid :cols="2" :x-gap="12">
-          <n-grid-item v-for="recipe in unlockedRecipes" :key="recipe.id">
-            <n-card :title="recipe.name" size="small">
-              <n-space vertical>
-                <n-text depth="3">{{ recipe.description }}</n-text>
-                <n-space>
-                  <n-tag type="info">{{ pillGrades[recipe.grade].name }}</n-tag>
-                  <n-tag type="warning">{{ pillTypes[recipe.type].name }}</n-tag>
-                </n-space>
-                <n-button
-                  @click="selectRecipe(recipe)"
-                  block
-                  :type="selectedRecipe?.id === recipe.id ? 'primary' : 'default'"
-                >
-                  {{ selectedRecipe?.id === recipe.id ? '已选择' : '选择' }}
-                </n-button>
-              </n-space>
-            </n-card>
-          </n-grid-item>
-        </n-grid>
-      </template>
-      <n-space vertical v-else>
-        <n-empty description="暂未掌握任何丹方" />
-      </n-space>
-      <!-- 材料需求 -->
-      <template v-if="selectedRecipe">
-        <n-divider>材料需求</n-divider>
-        <n-list>
-          <n-list-item v-for="material in selectedRecipe.materials" :key="material.herb">
-            <n-space justify="space-between">
-              <n-space>
-                <span>{{ getHerbName(material.herb) }}</span>
-                <n-tag size="small">需要数量: {{ material.count }}</n-tag>
-              </n-space>
-              <n-tag
-                :type="getMaterialStatus(material) === `${material.count}/${material.count}` ? 'success' : 'warning'"
-              >
-                拥有: {{ getMaterialStatus(material) }}
+  <n-card title="丹药炼制" :bordered="false">
+    <div class="alchemy-summary">
+      <div><span>已掌握丹方</span><strong>{{ unlockedRecipes.length }}</strong></div>
+      <div><span>当前可炼</span><strong>{{ craftableRecipeCount }}</strong></div>
+      <div><span>灵草库存</span><strong>{{ playerStore.herbs.length }}</strong></div>
+      <div><span>成品丹药</span><strong>{{ pillInventoryCount }}</strong></div>
+    </div>
+
+    <div v-if="unlockedRecipes.length" class="alchemy-toolbar">
+      <n-input v-model:value="recipeSearch" clearable placeholder="搜索丹方、效果或材料" />
+      <n-select v-model:value="recipeFilter" :options="filterOptions" />
+    </div>
+
+    <div v-if="unlockedRecipes.length" class="alchemy-workspace">
+      <div class="recipe-list" aria-label="丹方列表">
+        <button
+          v-for="recipe in visibleRecipes"
+          :key="recipe.id"
+          type="button"
+          class="recipe-row"
+          :class="{ selected: selectedRecipe?.id === recipe.id }"
+          @click="selectRecipe(recipe)"
+        >
+          <span class="recipe-main">
+            <span class="recipe-title">
+              <strong>{{ recipe.name }}</strong>
+              <n-tag size="small" :type="getCraftableCount(recipe) > 0 ? 'success' : 'default'">
+                {{ getCraftableCount(recipe) > 0 ? `可炼 ${getCraftableCount(recipe)} 炉` : '材料不足' }}
               </n-tag>
-            </n-space>
-          </n-list-item>
-        </n-list>
-      </template>
-      <!-- 效果预览 -->
-      <template v-if="selectedRecipe">
-        <n-divider>效果预览</n-divider>
-        <n-descriptions bordered :column="2">
-          <n-descriptions-item label="丹药介绍">
-            {{ selectedRecipe.description }}
+            </span>
+            <span class="recipe-meta">
+              <span>{{ pillGrades[recipe.grade].name }}</span>
+              <span>{{ pillTypes[recipe.type].name }}</span>
+              <span>{{ getEffectLabel(recipe.baseEffect.type) }}</span>
+            </span>
+          </span>
+          <span class="material-preview">
+            <span
+              v-for="material in recipe.materials"
+              :key="material.herb"
+              :class="{ missing: getHerbCount(material.herb) < material.count }"
+            >
+              {{ getHerbName(material.herb) }} {{ getHerbCount(material.herb) }}/{{ material.count }}
+            </span>
+          </span>
+        </button>
+        <n-empty v-if="visibleRecipes.length === 0" description="没有符合条件的丹方" />
+      </div>
+
+      <section v-if="selectedRecipe" class="craft-panel" aria-label="炼制详情">
+        <div class="craft-heading">
+          <div>
+            <n-text depth="3">当前丹方</n-text>
+            <h2>{{ selectedRecipe.name }}</h2>
+          </div>
+          <n-tag :type="canCraftSelected ? 'success' : 'warning'">
+            {{ canCraftSelected ? `最多可炼 ${selectedMaxCraftable} 炉` : '材料不足' }}
+          </n-tag>
+        </div>
+
+        <p class="recipe-description">{{ selectedRecipe.description }}</p>
+
+        <div class="material-list">
+          <div v-for="material in selectedRecipe.materials" :key="material.herb" class="material-row">
+            <span>{{ getHerbName(material.herb) }}</span>
+            <strong :class="{ shortage: getHerbCount(material.herb) < material.count }">
+              {{ getHerbCount(material.herb) }} / {{ material.count }}
+            </strong>
+          </div>
+        </div>
+
+        <n-descriptions bordered :column="1" size="small">
+          <n-descriptions-item label="实际效果">
+            {{ getEffectLabel(currentEffect.type) }} +{{ (currentEffect.value * 100).toFixed(1) }}%
           </n-descriptions-item>
-          <n-descriptions-item label="效果数值">+{{ (currentEffect.value * 100).toFixed(1) }}%</n-descriptions-item>
-          <n-descriptions-item label="持续时间">{{ Math.floor(currentEffect.duration / 60) }}分钟</n-descriptions-item>
-          <n-descriptions-item label="成功率">{{ (currentEffect.successRate * 100).toFixed(1) }}%</n-descriptions-item>
+          <n-descriptions-item label="持续时间">
+            {{ Math.floor(currentEffect.duration / 60) }} 分钟
+          </n-descriptions-item>
+          <n-descriptions-item label="单次成功率">
+            {{ (currentEffect.successRate * 100).toFixed(1) }}%
+          </n-descriptions-item>
         </n-descriptions>
-      </template>
-      <!-- 炼制按钮 -->
-      <n-button
-        class="craft-button"
-        type="primary"
-        block
-        v-if="selectedRecipe"
-        :disabled="!selectedRecipe || !checkMaterials(selectedRecipe)"
-        @click="craftPill"
-      >
-        {{ !checkMaterials(selectedRecipe) ? '材料不足' : '开始炼制' }}
-      </n-button>
-    </n-space>
-    <log-panel v-if="selectedRecipe" ref="logRef" title="炼丹日志" />
+
+        <div class="craft-actions">
+          <n-input-number
+            v-model:value="craftQuantity"
+            :min="1"
+            :max="Math.max(1, selectedMaxCraftable)"
+            :disabled="!canCraftSelected"
+          />
+          <n-button class="craft-button" type="primary" :disabled="!canCraftSelected" @click="craftPills">
+            {{ canCraftSelected ? `炼制 ${craftQuantity} 炉` : '材料不足' }}
+          </n-button>
+        </div>
+
+        <log-panel ref="logRef" title="炼丹日志" />
+      </section>
+
+      <n-empty v-else class="craft-panel" description="选择一张丹方查看材料与效果" />
+    </div>
+
+    <n-empty v-else description="暂未掌握任何丹方" />
   </n-card>
 </template>
 
 <script setup>
-  import { ref, computed } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import { usePlayerStore } from '../stores/player'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
   import { herbs } from '../plugins/herbs'
@@ -84,131 +113,167 @@
 
   const playerStore = usePlayerStore()
   const logRef = ref(null)
-
-  // 当前选择的丹方
   const selectedRecipe = ref(null)
+  const recipeSearch = ref('')
+  const recipeFilter = ref('all')
+  const craftQuantity = ref(1)
 
-  // 已解锁的丹方列表
-  const unlockedRecipes = computed(() => {
-    return pillRecipes.filter(recipe => playerStore.pillRecipes.includes(recipe.id))
+  const filterOptions = [
+    { label: '全部丹方', value: 'all' },
+    { label: '只看可炼', value: 'craftable' },
+    { label: '只看缺材料', value: 'missing' }
+  ]
+
+  const herbCounts = computed(() => {
+    const counts = {}
+    for (const herb of playerStore.herbs) counts[herb.id] = (counts[herb.id] || 0) + 1
+    return counts
   })
 
-  // 选择丹方
+  const getHerbCount = herbId => herbCounts.value[herbId] || 0
+  const getHerbName = herbId => herbs.find(herb => herb.id === herbId)?.name || herbId
+  const getCraftableCount = recipe => Math.min(
+    ...recipe.materials.map(material => Math.floor(getHerbCount(material.herb) / material.count))
+  )
+
+  const unlockedRecipes = computed(() => pillRecipes.filter(recipe => playerStore.pillRecipes.includes(recipe.id)))
+  const craftableRecipeCount = computed(() => unlockedRecipes.value.filter(recipe => getCraftableCount(recipe) > 0).length)
+  const pillInventoryCount = computed(() => playerStore.items.filter(item => item.type === 'pill').length)
+
+  const visibleRecipes = computed(() => {
+    const keyword = recipeSearch.value.trim().toLowerCase()
+    return unlockedRecipes.value
+      .filter(recipe => {
+        const craftable = getCraftableCount(recipe) > 0
+        if (recipeFilter.value === 'craftable' && !craftable) return false
+        if (recipeFilter.value === 'missing' && craftable) return false
+        if (!keyword) return true
+        const materialNames = recipe.materials.map(material => getHerbName(material.herb)).join(' ')
+        return `${recipe.name} ${recipe.description} ${materialNames}`.toLowerCase().includes(keyword)
+      })
+      .sort((a, b) => getCraftableCount(b) - getCraftableCount(a))
+  })
+
+  const selectedMaxCraftable = computed(() => selectedRecipe.value ? getCraftableCount(selectedRecipe.value) : 0)
+  const canCraftSelected = computed(() => selectedMaxCraftable.value > 0)
+  const currentEffect = computed(() => calculatePillEffect(selectedRecipe.value, playerStore.level))
+
+  const effectLabels = {
+    spiritRate: '灵力恢复', cultivationRate: '修炼速度', cultivationEfficiency: '修炼效率',
+    combatBoost: '战斗属性', resistanceBoost: '战斗抗性', allAttributes: '全属性',
+    spiritCap: '灵力上限', autoHeal: '生命恢复', spiritRecovery: '灵力回复',
+    comprehension: '悟性', fireAttribute: '火属性'
+  }
+  const getEffectLabel = type => effectLabels[type] || '特殊效果'
+
   const selectRecipe = recipe => {
     selectedRecipe.value = recipe
+    craftQuantity.value = 1
   }
 
-  // 检查材料是否充足
-  const checkMaterials = recipe => {
-    if (!recipe) return false
-    return recipe.materials.every(material => {
-      const count = playerStore.herbs.filter(h => h.id === material.herb).length
-      return count >= material.count
-    })
-  }
-
-  // 获取材料状态文本
-  const getMaterialStatus = material => {
-    const count = playerStore.herbs.filter(h => h.id === material.herb).length
-    return `${count}/${material.count}`
-  }
-
-  // 获取灵草名称
-  const getHerbName = herbId => {
-    const herb = herbs.find(h => h.id === herbId)
-    return herb ? herb.name : herbId
-  }
-
-  // 计算当前效果
-  const currentEffect = computed(() => {
-    if (!selectedRecipe.value) return null
-    return calculatePillEffect(selectedRecipe.value, playerStore.level)
+  watch(selectedMaxCraftable, maximum => {
+    craftQuantity.value = Math.min(Math.max(1, craftQuantity.value || 1), Math.max(1, maximum))
   })
 
-  // 炼制丹药
-  const craftPill = () => {
-    if (!selectedRecipe.value) return
-    const result = playerStore.craftPill(selectedRecipe.value.id)
-    if (result.success) {
-      logRef.value?.addLog('success', '炼制成功！')
-      // 播放成功动画效果
-      const btn = document.querySelector('.craft-button')
-      if (btn) {
-        btn.classList.add('success-animation')
-        setTimeout(() => {
-          btn.classList.remove('success-animation')
-        }, 1000)
-      }
-    } else {
-      logRef.value?.addLog('error', `炼制失败：${result.message}`)
-      // 播放失败动画效果
-      const btn = document.querySelector('.craft-button')
-      if (btn) {
-        btn.classList.add('fail-animation')
-        setTimeout(() => {
-          btn.classList.remove('fail-animation')
-        }, 1000)
-      }
+  const craftPills = () => {
+    if (!selectedRecipe.value || !canCraftSelected.value) return
+    const attempts = Math.min(craftQuantity.value, selectedMaxCraftable.value)
+    let successes = 0
+    let failures = 0
+    for (let index = 0; index < attempts; index++) {
+      const result = playerStore.craftPill(selectedRecipe.value.id)
+      if (result.success) successes++
+      else failures++
     }
+    const type = successes > 0 ? 'success' : 'error'
+    logRef.value?.addLog(type, `完成 ${attempts} 炉：成功 ${successes}，失败 ${failures}`)
+    craftQuantity.value = Math.min(craftQuantity.value, Math.max(1, selectedMaxCraftable.value))
   }
 </script>
 
 <style scoped>
-  .n-space {
-    width: 100%;
-  }
-
-  .n-button {
+  .alchemy-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
     margin-bottom: 12px;
   }
 
-  .n-collapse {
-    margin-top: 12px;
+  .alchemy-summary > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--n-border-color);
+    border-radius: 6px;
   }
 
-  .craft-button {
-    position: relative;
-    overflow: hidden;
+  .alchemy-summary span, .recipe-meta, .material-preview { color: var(--n-text-color-3); }
+  .alchemy-summary strong { font-size: 18px; }
+
+  .alchemy-toolbar {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) 160px;
+    gap: 8px;
+    margin-bottom: 12px;
   }
 
-  @keyframes success-ripple {
-    0% {
-      transform: scale(0);
-      opacity: 1;
-    }
-    100% {
-      transform: scale(4);
-      opacity: 0;
-    }
+  .alchemy-workspace {
+    display: grid;
+    grid-template-columns: minmax(320px, 1.25fr) minmax(300px, 0.75fr);
+    gap: 14px;
+    align-items: start;
   }
 
-  @keyframes fail-shake {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    25% {
-      transform: translateX(-10px);
-    }
-    75% {
-      transform: translateX(10px);
-    }
+  .recipe-list { display: grid; gap: 8px; }
+
+  .recipe-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(190px, auto);
+    gap: 12px;
+    width: 100%;
+    padding: 11px 12px;
+    color: inherit;
+    text-align: left;
+    background: transparent;
+    border: 1px solid var(--n-border-color);
+    border-radius: 6px;
+    cursor: pointer;
   }
 
-  .success-animation::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 20px;
-    height: 20px;
-    background: rgba(0, 255, 0, 0.3);
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-    animation: success-ripple 1s ease-out;
+  .recipe-row:hover, .recipe-row.selected { border-color: var(--n-color-target); background: var(--n-color-embedded); }
+  .recipe-main, .material-preview { display: grid; gap: 6px; min-width: 0; }
+  .recipe-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .recipe-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; }
+  .material-preview { justify-items: end; align-content: center; font-size: 12px; }
+  .material-preview .missing, .shortage { color: #d03050; }
+
+  .craft-panel {
+    position: sticky;
+    top: 76px;
+    display: grid;
+    gap: 12px;
+    min-width: 0;
   }
 
-  .fail-animation {
-    animation: fail-shake 0.5s ease-in-out;
+  .craft-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .craft-heading h2 { margin: 2px 0 0; font-size: 20px; }
+  .recipe-description { margin: 0; color: var(--n-text-color-2); }
+  .material-list { display: grid; gap: 6px; }
+  .material-row { display: flex; justify-content: space-between; padding: 8px 10px; background: var(--n-color-embedded); border-radius: 4px; }
+  .craft-actions { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; }
+  .craft-button { width: 100%; }
+
+  @media (max-width: 820px) {
+    .alchemy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .alchemy-workspace { grid-template-columns: 1fr; }
+    .craft-panel { position: static; }
+  }
+
+  @media (max-width: 560px) {
+    .alchemy-toolbar, .recipe-row { grid-template-columns: 1fr; }
+    .material-preview { justify-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .craft-actions { grid-template-columns: 100px minmax(0, 1fr); }
   }
 </style>

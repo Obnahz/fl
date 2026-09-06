@@ -2,6 +2,44 @@ import { buildDungeonPlayerCombatant, resolveAutoCombat } from './combatRules.js
 import { selectEnemyForLocation } from './enemies.js'
 import { EQUIPMENT_PITY_LIMIT, getEquipmentPityAfter } from './equipmentRules.js'
 import { STARTER_TECHNIQUE_ID, selectTechniqueForCombat } from './techniques.js'
+import { getQualityPowerMultiplier, rollQuality } from './quality.js'
+
+const PET_SPECIES = [
+  { id: 'spirit_cat', name: '灵猫', description: '敏捷的灵兽。' },
+  { id: 'cloud_fox', name: '云狐', description: '擅长隐匿与追踪。' },
+  { id: 'stone_tortoise', name: '玄甲龟', description: '拥有坚韧防御。' },
+  { id: 'flame_hound', name: '炎獒', description: '攻击性极强的灵兽。' }
+]
+
+const createExplorationPet = (level, tier, rolls = {}) => {
+  const quality = rollQuality(Number(level) + Math.max(0, Number(tier) - 1) * 8, rolls.quality)
+  const strength = getQualityPowerMultiplier(quality, level) * (1 + Math.max(0, Number(tier) - 1) * 0.12)
+  const species = PET_SPECIES[Math.floor(clampRoll(rolls.species) * PET_SPECIES.length)]
+  const base = { attack: 10, health: 110, defense: 8, speed: 10 }
+  return {
+    id: `exploration_pet_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    type: 'pet',
+    name: species.name,
+    description: species.description,
+    rarity: quality,
+    quality,
+    level: 1,
+    star: 0,
+    power: Math.round(strength * 100),
+    combatAttributes: {
+      attack: Math.round(base.attack * strength),
+      health: Math.round(base.health * strength),
+      defense: Math.round(base.defense * strength),
+      speed: Math.round(base.speed * strength),
+      critRate: Number((0.05 * strength).toFixed(3)),
+      comboRate: Number((0.04 * strength).toFixed(3)),
+      counterRate: Number((0.03 * strength).toFixed(3)),
+      stunRate: Number((0.02 * strength).toFixed(3)),
+      dodgeRate: Number((0.04 * strength).toFixed(3)),
+      vampireRate: Number((0.02 * strength).toFixed(3))
+    }
+  }
+}
 
 export const SPECIAL_EXPLORATION_EVENTS = [
   {
@@ -156,13 +194,25 @@ export const resolveExploration = ({ location, player, rolls = {} }) => {
   }
 
   const guaranteed = equipmentPity >= EQUIPMENT_PITY_LIMIT
+  const tier = Math.max(1, Number(location.tier) || 1)
+  const petChance = Math.min(0.12, 0.02 + tier * 0.008)
+  if (clampRoll(rolls.pet == null ? 1 : rolls.pet) < petChance) {
+    return {
+      kind: 'reward',
+      reward: { type: 'pet', amount: 1, pet: createExplorationPet(player.level, tier, rolls) },
+      multiplier: 1,
+      guaranteed: false,
+      equipmentPityAfter: equipmentPity,
+      spiritCost: location.spiritCost
+    }
+  }
   const rewardConfig = guaranteed
     ? location.rewards.find(reward => reward.type === 'equipment') || { type: 'equipment', amount: [1, 1] }
     : selectReward(location.rewards, rolls.reward)
   const multiplier = clampRoll(rolls.bonus) < Math.min(0.4, 0.12 * Math.max(1, Number(player.luck) || 1)) ? 1.5 : 1
   const amount = Math.floor(amountFromRange(rewardConfig.amount, rolls.amount) * multiplier)
   const reward = { type: rewardConfig.type, amount }
-  if (rewardConfig.type === 'equipment') reward.tier = Math.max(1, Number(location.tier) || 1)
+  if (rewardConfig.type === 'equipment') reward.tier = tier
   return {
     kind: 'reward',
     reward,

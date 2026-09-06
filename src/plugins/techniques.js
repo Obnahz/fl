@@ -26,6 +26,23 @@ export const TECHNIQUES = [
   }
 ]
 
+TECHNIQUES.push(
+  { id: 'azure_heaven_scripture', name: '青天化气诀', description: '借青天灵气稳固经脉，持续破除护体真气。', style: 'armor_break', styleName: '青天破障', armorPenetration: 0.22, armorPenetrationPerLevel: 0.05, damageMultiplier: 1.2, damagePerLevel: 0.1, cooldownRounds: 3, maxLevel: 5, duplicateFragments: 3 },
+  { id: 'golden_body_canon', name: '金身镇岳经', description: '凝练金身，以沉稳重击压制强敌。', style: 'critical_burst', styleName: '金身震岳', critRateBonus: 0.06, critRateBonusPerLevel: 0.025, damageMultiplier: 1.32, damagePerLevel: 0.1, cooldownRounds: 2, maxLevel: 5, duplicateFragments: 3 }
+)
+TECHNIQUES.push(
+  { id: 'star_river_sutra', name: '星河炼体经', description: '借星河之力淬炼肉身，攻守兼备。', style: 'critical_burst', styleName: '星河坠击', critRateBonus: 0.1, critRateBonusPerLevel: 0.025, damageMultiplier: 1.42, damagePerLevel: 0.11, cooldownRounds: 3, maxLevel: 5, duplicateFragments: 4 },
+  { id: 'earth_guardian_arts', name: '厚土镇岳功', description: '引地脉护体，擅长持久作战。', style: 'armor_break', styleName: '镇岳破甲', armorPenetration: 0.18, armorPenetrationPerLevel: 0.045, damageMultiplier: 1.28, damagePerLevel: 0.1, cooldownRounds: 2, maxLevel: 5, duplicateFragments: 4 },
+  { id: 'wind_chase_blade', name: '逐风追云诀', description: '身随风动，连续出手不留破绽。', style: 'critical_burst', styleName: '逐风连斩', critRateBonus: 0.09, critRateBonusPerLevel: 0.03, damageMultiplier: 1.36, damagePerLevel: 0.12, cooldownRounds: 2, maxLevel: 5, duplicateFragments: 4 },
+  { id: 'void_return_method', name: '虚空回元法', description: '借虚空回响撕裂护体真气。', style: 'armor_break', styleName: '虚空蚀甲', armorPenetration: 0.3, armorPenetrationPerLevel: 0.05, damageMultiplier: 1.24, damagePerLevel: 0.12, cooldownRounds: 4, maxLevel: 5, duplicateFragments: 5 }
+)
+
+TECHNIQUES.push(
+  { id: 'jade_phoenix_heart', name: '\u7389\u51e4\u5b9a\u9b42\u7bc7', description: '\u4ee5\u51e4\u706b\u6e29\u517b\u795e\u9b42\uff0c\u5728\u6301\u4e45\u6218\u4e2d\u7a33\u5b9a\u8f93\u51fa\u3002', style: 'critical_burst', styleName: '\u51e4\u706b\u51b3\u88c2', critRateBonus: 0.11, critRateBonusPerLevel: 0.028, damageMultiplier: 1.48, damagePerLevel: 0.12, cooldownRounds: 3, maxLevel: 5, duplicateFragments: 5 },
+  { id: 'origin_sand_domain', name: '\u9053\u6e90\u9547\u57df\u7bc7', description: '\u4ee5\u539a\u91cd\u9053\u57df\u538b\u5236\u654c\u4eba\u62a4\u4f53\u3002', style: 'armor_break', styleName: '\u9053\u57df\u7834\u969c', armorPenetration: 0.32, armorPenetrationPerLevel: 0.05, damageMultiplier: 1.3, damagePerLevel: 0.12, cooldownRounds: 4, maxLevel: 5, duplicateFragments: 5 },
+  { id: 'heavenly_thunder_gate', name: '\u5929\u96f7\u5f00\u95e8\u7bc7', description: '\u5f15\u5929\u96f7\u5165\u4f53\uff0c\u4ee5\u7206\u53d1\u6362\u53d6\u9ad8\u9891\u51fa\u624b\u3002', style: 'critical_burst', styleName: '\u5929\u96f7\u8fde\u73af', critRateBonus: 0.14, critRateBonusPerLevel: 0.025, damageMultiplier: 1.56, damagePerLevel: 0.13, cooldownRounds: 4, maxLevel: 5, duplicateFragments: 6 }
+)
+
 export const STARTER_TECHNIQUE_ID = 'spirit_edge'
 export const getTechniqueById = id => TECHNIQUES.find(technique => technique.id === id) || null
 export const normalizeUnlockedTechniques = unlockedIds => {

@@ -13,6 +13,12 @@ const MARKET_CATALOG = [
   { id: 'spirit_stones', name: '回灵玉髓', description: '获得 2500 点灵力，适合冲击境界。', price: 450, purchaseLimit: 1, reward: { spirit: 2500 } }
 ]
 
+MARKET_CATALOG.push(
+  { id: 'herb_bundle', name: '灵草锦囊', description: '获得一批随机灵草。', price: 160, purchaseLimit: 2, reward: { herbs: 3 } },
+  { id: 'pet_training', name: '灵兽训粮', description: '获得灵宠精华。', price: 240, purchaseLimit: 1, reward: { petEssence: 25 } },
+  { id: 'breakthrough_cache', name: '破境宝匣', description: '为突破准备灵力与强化资源。', price: 520, purchaseLimit: 1, reward: { spirit: 1800, reinforceStones: 20 } }
+)
+
 const isObject = value => value && typeof value === 'object' && !Array.isArray(value)
 
 const normalizeDateKey = value => {

@@ -225,6 +225,31 @@ const bossGroups = {
   }
 }
 
+const highTierEnemies = [
+  ['thunder_cliff', '\u96f7\u6e0a\u517d', 900, 66, 58, 40],
+  ['void_palace', '\u865a\u7a7a\u9053\u5175', 1200, 78, 70, 48],
+  ['dao_origin_sea', '\u9053\u6e90\u7075\u5c06', 1600, 92, 84, 56],
+  ['daluo_skyline', '\u5929\u95e8\u5de1\u5b88', 2100, 108, 98, 64],
+  ['origin_dao_temple', '\u795e\u5bab\u9053\u5f71', 2800, 126, 116, 72],
+  ['daluo_origin_gate', '\u672c\u6e90\u5929\u5c06', 3700, 148, 136, 82]
+]
+
+highTierEnemies.forEach(([locationId, name, maxHealth, attack, defense, speed], index) => {
+  enemyGroups[locationId] = [
+    { id: `${locationId}_guardian`, name, type: 'normal', weight: 0.68, maxHealth, attack, defense, speed, critRate: 0.2 + index * 0.015, dodgeRate: 0.12 + index * 0.01, rewards: [{ type: 'cultivation', amount: 2200 + index * 1800 }] },
+    { id: `${locationId}_elite`, name: `\u7cbe\u82f1${name}`, type: 'elite', weight: 0.32, maxHealth: Math.round(maxHealth * 1.35), attack: Math.round(attack * 1.22), defense: Math.round(defense * 1.18), speed: speed + 6, critRate: 0.25 + index * 0.015, dodgeRate: 0.15 + index * 0.01, rewards: [{ type: 'spirit_stone', amount: 1400 + index * 900 }] }
+  ]
+})
+
+Object.assign(bossGroups, {
+  thunder_cliff: { id: 'thunder_tribulation_avatar', name: '\u96f7\u52ab\u6cd5\u76f8', type: 'boss', chance: 0.15, maxHealth: 1900, attack: 105, defense: 88, speed: 58, critRate: 0.28, dodgeRate: 0.16, rewards: [{ type: 'spirit_stone', amount: 1800 }, { type: 'skill', skillId: 'heavenly_thunder_gate', duplicateFragments: 6 }] },
+  void_palace: { id: 'void_palace_master', name: '\u865a\u7a7a\u5bab\u4e3b', type: 'boss', chance: 0.16, maxHealth: 2500, attack: 124, defense: 112, speed: 68, critRate: 0.3, dodgeRate: 0.2, rewards: [{ type: 'spirit_stone', amount: 2600 }, { type: 'skill', skillId: 'void_return_method', duplicateFragments: 5 }] },
+  dao_origin_sea: { id: 'origin_sea_lord', name: '\u9053\u6e90\u6d77\u4e3b', type: 'boss', chance: 0.17, maxHealth: 3300, attack: 148, defense: 132, speed: 76, critRate: 0.32, dodgeRate: 0.21, rewards: [{ type: 'spirit_stone', amount: 3600 }, { type: 'skill', skillId: 'origin_sand_domain', duplicateFragments: 5 }] },
+  daluo_skyline: { id: 'daluo_gatekeeper', name: '\u5927\u7f57\u5b88\u95e8\u4eba', type: 'boss', chance: 0.18, maxHealth: 4300, attack: 176, defense: 158, speed: 86, critRate: 0.35, dodgeRate: 0.23, rewards: [{ type: 'spirit_stone', amount: 5200 }, { type: 'skill', skillId: 'jade_phoenix_heart', duplicateFragments: 5 }] },
+  origin_dao_temple: { id: 'origin_ancestor_shadow', name: '\u9053\u7956\u6b8b\u5f71', type: 'boss', chance: 0.19, maxHealth: 5700, attack: 210, defense: 190, speed: 96, critRate: 0.38, dodgeRate: 0.25, rewards: [{ type: 'spirit_stone', amount: 7600 }, { type: 'skill', skillId: 'origin_sand_domain', duplicateFragments: 6 }] },
+  daluo_origin_gate: { id: 'origin_heavenly_lord', name: '\u672c\u6e90\u5929\u5c0a', type: 'boss', chance: 0.2, maxHealth: 7600, attack: 252, defense: 228, speed: 108, critRate: 0.42, dodgeRate: 0.28, rewards: [{ type: 'spirit_stone', amount: 11000 }, { type: 'skill', skillId: 'heavenly_thunder_gate', duplicateFragments: 7 }] }
+})
+
 const clampRoll = value => Math.min(0.999999, Math.max(0, Number.isFinite(value) ? value : 0.5))
 
 export const getEnemiesForLocation = locationId => enemyGroups[locationId] || []

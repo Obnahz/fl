@@ -56,6 +56,11 @@ export const buildDungeonPlayerCombatant = ({ player = {}, technique = null } = 
     0,
     0.75
   )
+  const resistanceBoost = clamp(
+    (player.activeEffects || []).reduce((total, effect) => total + (effect?.type === 'resistanceBoost' ? getNumeric(effect.value) : 0), getNumeric(special.resistanceBoost)),
+    0,
+    0.75
+  )
   const multiplier = 1 + attributeBoost
   const petBaseHealth = petAlreadyApplied ? 0 : getNumeric(pet.health)
   const petBaseAttack = petAlreadyApplied ? 0 : getNumeric(pet.attack)
@@ -74,6 +79,7 @@ export const buildDungeonPlayerCombatant = ({ player = {}, technique = null } = 
     ...resistance,
     ...special,
     combatBoost,
+    resistanceBoost,
     technique
   })
   stats.damage = stats.attack

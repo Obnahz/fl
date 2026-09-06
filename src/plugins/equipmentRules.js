@@ -1,10 +1,11 @@
+import { QUALITY_INFO, QUALITY_ORDER, getQualityInfo, getQualityPowerMultiplier, rollQuality } from './quality.js'
+
 export const EQUIPMENT_QUALITIES = {
   common: { name: '凡品', color: '#6b7280', multiplier: 1 },
   uncommon: { name: '下品', color: '#2f855a', multiplier: 1.2 },
   rare: { name: '中品', color: '#2563eb', multiplier: 1.5 },
   epic: { name: '上品', color: '#7c3aed', multiplier: 1.9 },
-  legendary: { name: '极品', color: '#d97706', multiplier: 2.4 },
-  mythic: { name: '仙品', color: '#be123c', multiplier: 3 }
+  mythic: QUALITY_INFO.mythic
 }
 
 export const EQUIPMENT_PITY_LIMIT = 8
@@ -58,8 +59,64 @@ EQUIPMENT_SETS.xingyun = {
     { pieces: 4, stats: { speed: 4 }, description: '\u901f\u5ea6 +4' }
   ]
 }
+EQUIPMENT_SETS.canglan = {
+  name: '沧澜套', color: '#0e7490',
+  bonuses: [
+    { pieces: 2, stats: { spiritRate: 0.04 }, description: '吐纳效率 +4%' },
+    { pieces: 4, stats: { healBoost: 0.06 }, description: '治疗效果 +6%' }
+  ]
+}
+EQUIPMENT_SETS.tianyan = {
+  name: '天衍套', color: '#a16207',
+  bonuses: [
+    { pieces: 2, stats: { attack: 10 }, description: '攻击 +10' },
+    { pieces: 4, stats: { finalDamageBoost: 0.05 }, description: '最终伤害 +5%' }
+  ]
+}
+EQUIPMENT_SETS.xinghe = {
+  name: '星河套', color: '#4f46e5',
+  bonuses: [
+    { pieces: 2, stats: { speed: 5 }, description: '速度 +5' },
+    { pieces: 4, stats: { critDamageBoost: 0.08 }, description: '暴击伤害 +8%' }
+  ]
+}
+EQUIPMENT_SETS.houtu = {
+  name: '厚土套', color: '#92400e',
+  bonuses: [
+    { pieces: 2, stats: { health: 40 }, description: '生命 +40' },
+    { pieces: 4, stats: { finalDamageReduce: 0.06 }, description: '最终减伤 +6%' }
+  ]
+}
+EQUIPMENT_SETS.yufeng = {
+  name: '御风套', color: '#0f766e',
+  bonuses: [
+    { pieces: 2, stats: { dodgeRate: 0.04 }, description: '闪避 +4%' },
+    { pieces: 4, stats: { comboRate: 0.06 }, description: '连击 +6%' }
+  ]
+}
+EQUIPMENT_SETS.hunyuan = {
+  name: '混元套', color: '#7e22ce',
+  bonuses: [
+    { pieces: 2, stats: { attack: 8, defense: 8 }, description: '攻防 +8' },
+    { pieces: 4, stats: { combatBoost: 0.05 }, description: '战斗属性 +5%' }
+  ]
+}
 
-const QUALITY_ORDER = Object.keys(EQUIPMENT_QUALITIES)
+EQUIPMENT_SETS.yufeng_immortal = {
+  name: '\u5fa1\u98ce\u4ed9\u8863', color: '#0f766e',
+  bonuses: [
+    { pieces: 2, stats: { speed: 7 }, description: '\u901f\u5ea6 +7' },
+    { pieces: 4, stats: { dodgeRate: 0.06, comboRate: 0.04 }, description: '\u95ea\u907f +6%\uff0c\u8fde\u51fb +4%' }
+  ]
+}
+EQUIPMENT_SETS.daluo_origin = {
+  name: '\u5927\u7f57\u9053\u6e90\u5957', color: '#b45309',
+  bonuses: [
+    { pieces: 2, stats: { attack: 12, defense: 12 }, description: '\u653b\u9632 +12' },
+    { pieces: 4, stats: { finalDamageBoost: 0.08, finalDamageReduce: 0.08 }, description: '\u6700\u7ec8\u4f24\u5bb3\u589e\u51cf +8%' }
+  ]
+}
+
 const PERCENT_STATS = new Set([
   'critRate',
   'comboRate',
@@ -95,10 +152,10 @@ const clampRoll = value => (Number.isFinite(value) ? Math.min(0.999999, Math.max
 
 const pick = (values, roll) => values[Math.floor(clampRoll(roll) * values.length)]
 
-const getQuality = (tier, roll) => {
-  const progress = (Math.min(5, Math.max(1, Number(tier) || 1)) - 1) / 4
+const getQuality = (tier, playerLevel, roll) => {
+  const progress = Math.min(1, Math.max(0, (Number(playerLevel) + (Number(tier) - 1) * 8 - 1) / 99))
   const earlyThresholds = [0.65, 0.93, 0.99, 0.998, 0.9998]
-  const lateThresholds = [0.15, 0.45, 0.72, 0.9, 0.98]
+  const lateThresholds = [0.35, 0.72, 0.92, 0.985, 0.998]
   const thresholds = earlyThresholds.map((value, index) => value + (lateThresholds[index] - value) * progress)
   const value = clampRoll(roll)
   const qualityIndex = thresholds.findIndex(threshold => value < threshold)
@@ -113,13 +170,13 @@ const rollStat = (range, roll, multiplier) => {
 export const createEquipmentDrop = ({ id, tier = 1, playerLevel = 1, rolls = {} } = {}) => {
   const slot = pick(Object.keys(EQUIPMENT_SLOTS), rolls.slot)
   const slotConfig = EQUIPMENT_SLOTS[slot]
-  const quality = getQuality(tier, rolls.quality)
-  const qualityInfo = EQUIPMENT_QUALITIES[quality]
+  const quality = getQuality(tier, playerLevel, rolls.quality)
+  const qualityInfo = getQualityInfo(quality)
   const maximumLevel = Math.max(1, Math.floor(Number(playerLevel) || 1))
   const level = Math.min(maximumLevel, 1 + Math.floor(clampRoll(rolls.level) * maximumLevel))
   const tierMultiplier = 1 + (Math.min(7, Math.max(1, Number(tier) || 1)) - 1) * 0.55
   const levelMultiplier = 1 + (level - 1) * 0.04
-  const multiplier = qualityInfo.multiplier * tierMultiplier * levelMultiplier
+  const multiplier = getQualityPowerMultiplier(quality, playerLevel) * tierMultiplier * levelMultiplier
   const stats = {}
 
   Object.entries(slotConfig.stats).forEach(([stat, range], index) => {
@@ -130,7 +187,7 @@ export const createEquipmentDrop = ({ id, tier = 1, playerLevel = 1, rolls = {} 
 
   const prefix = pick(slotConfig.prefixes, rolls.name)
   const setId = pick(Object.keys(EQUIPMENT_SETS), rolls.set)
-  const suffix = { common: '', uncommon: '·灵', rare: '·玄', epic: '·真', legendary: '·极', mythic: '·仙' }[quality]
+  const suffix = { common: '', uncommon: '·灵', rare: '·玄', epic: '·真', mythic: '·仙' }[quality]
 
   return {
     id: id || `exploration_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,

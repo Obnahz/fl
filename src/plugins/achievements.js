@@ -1,3 +1,5 @@
+import { normalizeQuality } from './quality.js'
+
 const equipmentTypes = {
   weapon: '武器',
   head: '头部',
@@ -24,7 +26,7 @@ export const achievements = {
       description: '获得第一件装备',
       condition: player => {
         const equippedCount = Object.values(player.equippedArtifacts).filter(e => e !== null).length
-        const inventoryCount = player.equipment?.length || 0
+        const inventoryCount = (player.items || []).filter(item => item?.type && item?.slot).length
         return equippedCount + inventoryCount >= 1
       },
       reward: { spirit: 200 }
@@ -35,7 +37,7 @@ export const achievements = {
       description: '拥有10件装备',
       condition: player => {
         const equippedCount = Object.values(player.equippedArtifacts).filter(e => e !== null).length
-        const inventoryCount = player.equipment?.length || 0
+        const inventoryCount = (player.items || []).filter(item => item?.type && item?.slot).length
         return equippedCount + inventoryCount >= 10
       },
       reward: { spirit: 1000 }
@@ -45,8 +47,8 @@ export const achievements = {
       name: '装备大师',
       description: '拥有一件极品品质装备',
       condition: player => {
-        const equippedLegendary = Object.values(player.equippedArtifacts).some(e => e?.quality === 'legendary')
-        const inventoryLegendary = player.equipment?.some(e => e.quality === 'legendary')
+        const equippedLegendary = Object.values(player.equippedArtifacts).some(e => normalizeQuality(e?.quality) === 'mythic')
+        const inventoryLegendary = (player.items || []).some(e => e?.slot && normalizeQuality(e.quality) === 'mythic')
         return equippedLegendary || inventoryLegendary
       },
       reward: { spirit: 3000, damage: 1.2 }
@@ -57,7 +59,7 @@ export const achievements = {
       description: '强化任意装备到+10',
       condition: player => {
         const equippedEnhanced = Object.values(player.equippedArtifacts).some(e => e?.enhanceLevel >= 10)
-        const inventoryEnhanced = player.equipment?.some(e => e.enhanceLevel >= 10)
+        const inventoryEnhanced = (player.items || []).some(e => e?.slot && e.enhanceLevel >= 10)
         return equippedEnhanced || inventoryEnhanced
       },
       reward: { spirit: 5000, damage: 1.5 }
@@ -71,7 +73,7 @@ export const achievements = {
           ...Object.values(player.equippedArtifacts).filter(e => e !== null),
           ...(player.equipment || [])
         ]
-        const legendaryTypes = new Set(allEquipment.filter(e => e.quality === 'legendary').map(e => e.type))
+        const legendaryTypes = new Set(allEquipment.filter(e => normalizeQuality(e.quality) === 'mythic').map(e => e.type))
         return legendaryTypes.size >= 4
       },
       reward: { spirit: 10000, damage: 2, defense: 2 }
@@ -82,7 +84,7 @@ export const achievements = {
       description: '初次强化装备',
       condition: player => {
         const equippedEnhanced = Object.values(player.equippedArtifacts).some(e => e?.enhanceLevel > 0)
-        const inventoryEnhanced = player.equipment?.some(e => e.enhanceLevel > 0)
+        const inventoryEnhanced = (player.items || []).some(e => e?.slot && e.enhanceLevel > 0)
         return equippedEnhanced || inventoryEnhanced
       },
       reward: { spirit: 500 }
@@ -117,7 +119,7 @@ export const achievements = {
       description: '将一件装备强化到+15',
       condition: player => {
         const equippedEnhanced = Object.values(player.equippedArtifacts).some(e => e?.enhanceLevel >= 15)
-        const inventoryEnhanced = player.equipment?.some(e => e.enhanceLevel >= 15)
+        const inventoryEnhanced = (player.items || []).some(e => e?.slot && e.enhanceLevel >= 15)
         return equippedEnhanced || inventoryEnhanced
       },
       reward: { spirit: 20000, damage: 2 }
@@ -828,7 +830,7 @@ export const getAchievementProgress = (player, achievement) => {
         const uniqueHerbs = new Set((player.herbs || []).map(h => h.id)).size
         return Math.min(100, (uniqueHerbs / targetTypes) * 100)
       } else if (achievement.id === 'collection_4') {
-        return (player.herbs || []).some(h => h.quality === 'legendary') ? 100 : 0
+        return (player.herbs || []).some(h => normalizeQuality(h.quality) === 'mythic') ? 100 : 0
       } else {
         return Math.min(100, ((player.herbs || []).length / 100) * 100)
       }

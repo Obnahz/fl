@@ -67,7 +67,7 @@
   const offers = computed(() => playerStore.getMarketOffers(todayLabel))
 
   const formatReward = reward => Object.entries(reward)
-    .map(([key, amount]) => ({ spirit: '灵力', reinforceStones: '强化石', refinementStones: '洗炼石' }[key] || key) + ` ×${amount}`)
+    .map(([key, amount]) => ({ spirit: '灵力', reinforceStones: '强化石', refinementStones: '洗炼石', herbs: '灵草', petEssence: '灵兽精华' }[key] || key) + ` ×${amount}`)
     .join('、')
 
   const buyOffer = offer => {

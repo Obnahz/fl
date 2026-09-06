@@ -1,11 +1,18 @@
-// 灵草品质等级
-export const herbQualities = {
+import { QUALITY_INFO, QUALITY_ORDER, normalizeQuality, rollQuality } from './quality.js'
+
+// 灵草品质统一使用全局品质。
+export const herbQualities = Object.fromEntries(
+  QUALITY_ORDER.map(quality => [quality, { ...QUALITY_INFO[quality], value: QUALITY_INFO[quality].multiplier }])
+)
+/* legacy quality table kept for save compatibility
+export const legacyHerbQualities = {
   common: { name: '普通', value: 1 },
   uncommon: { name: '优质', value: 1.5 },
   rare: { name: '稀有', value: 2 },
   epic: { name: '极品', value: 3 },
   legendary: { name: '仙品', value: 5 }
 }
+*/
 
 // 灵草种类配置
 export const herbs = [
@@ -131,17 +138,40 @@ export const herbs = [
   }
 ]
 
+herbs.push(
+  { id: 'azure_lotus', name: '青冥莲', description: '吸纳青冥之气的稀有灵草。', baseValue: 105, category: 'cultivation', chance: 0.008 },
+  { id: 'void_moss', name: '虚空苔', description: '生长在空间裂隙边缘的灵草。', baseValue: 120, category: 'special', chance: 0.006 },
+  { id: 'golden_sun_root', name: '曜日金根', description: '蕴含炽烈阳元的灵根。', baseValue: 135, category: 'attribute', chance: 0.004 },
+  { id: 'chaos_orchid', name: '混沌兰', description: '传说中可调和五行的仙草。', baseValue: 160, category: 'special', chance: 0.002 }
+)
+herbs.push(
+  { id: 'soul_lotus', name: '凝魂莲', description: '温养神魂，提升悟道效率。', baseValue: 180, category: 'cultivation', chance: 0.0015 },
+  { id: 'starvine', name: '星辰藤', description: '汲取星辉成长的珍稀灵藤。', baseValue: 210, category: 'spirit', chance: 0.0012 },
+  { id: 'earthheart_root', name: '地心根', description: '沉淀厚重地脉之力的灵根。', baseValue: 230, category: 'attribute', chance: 0.001 },
+  { id: 'nine_sun_fruit', name: '九阳果', description: '九轮太阳精华凝成的灵果。', baseValue: 260, category: 'special', chance: 0.0008 }
+)
+
 // 根据品质获取灵草实际价值
+herbs.push(
+  { id: 'jade_phoenix_grass', name: '\u7389\u51e4\u7075\u8349', description: '\u6c72\u53d6\u51e4\u8840\u4f59\u97f5\u7684\u7075\u8349\uff0c\u53ef\u7a33\u56fa\u795e\u9b42\u3002', baseValue: 290, category: 'cultivation', chance: 0.00065 },
+  { id: 'origin_sand', name: '\u9053\u6e90\u6c99', description: '\u9053\u6e90\u6d77\u4e2d\u51dd\u805a\u7684\u5143\u7d20\u6676\u7802\u3002', baseValue: 320, category: 'attribute', chance: 0.0005 },
+  { id: 'heavenly_thunder_bloom', name: '\u5929\u96f7\u82b1', description: '\u53ea\u5728\u5929\u96f7\u5929\u5811\u5f00\u653e\u7684\u7a00\u4e16\u82b1\u6735\u3002', baseValue: 350, category: 'spirit', chance: 0.00035 },
+  { id: 'daluo_fruit', name: '\u5927\u7f57\u9053\u679c', description: '\u8574\u542b\u5927\u7f57\u9053\u97f5\u7684\u4ed9\u679c\uff0c\u4f4e\u5883\u754c\u4ea6\u53ef\u5076\u7136\u83b7\u5f97\u3002', baseValue: 420, category: 'special', chance: 0.0002 }
+)
+
 export const getHerbValue = (herb, quality) => {
-  return Math.floor(herb.baseValue * herbQualities[quality].value)
+  const normalized = normalizeQuality(quality)
+  return Math.floor(herb.baseValue * herbQualities[normalized].value)
 }
 
 // 随机获取灵草
-export const getRandomHerb = () => {
-  const rand = Math.random()
+export const getRandomHerb = (level = 1, rolls = {}) => {
+  const totalWeight = herbs.reduce((total, herb) => total + Math.max(0, Number(herb.chance) || 0), 0)
+  const herbRoll = Number.isFinite(rolls.herb) ? rolls.herb : Math.random()
+  const rand = Math.min(0.999999, Math.max(0, herbRoll)) * totalWeight
   let cumulative = 0
   for (const herb of herbs) {
-    cumulative += herb.chance
+    cumulative += Math.max(0, Number(herb.chance) || 0)
     if (rand <= cumulative) {
       // 随机决定品质
       const qualities = Object.keys(herbQualities)
@@ -152,10 +182,14 @@ export const getRandomHerb = () => {
       else if (qualityRand < 0.95) quality = qualities[2] // 15% 稀有
       else if (qualityRand < 0.99) quality = qualities[3] // 4% 极品
       else quality = qualities[4] // 1% 仙品
+      const rolledQuality = rollQuality(
+        level,
+        Number.isFinite(rolls.quality) ? rolls.quality : Math.random()
+      )
       return {
         ...herb,
-        quality,
-        value: getHerbValue(herb, quality)
+        quality: rolledQuality,
+        value: getHerbValue(herb, rolledQuality)
       }
     }
   }
