@@ -866,11 +866,32 @@
   const inventoryEquipmentCount = computed(() =>
     playerStore.items.filter(item => item?.slot && equipmentTypes[item.slot]).length
   )
+  const equipmentScoreCache = computed(() => {
+    const scores = new Map()
+    playerStore.items.forEach(item => {
+      if (item?.slot && equipmentTypes[item.slot]) scores.set(item.id, getEquipmentScore(item))
+    })
+    Object.values(playerStore.equippedArtifacts).forEach(item => {
+      if (item?.id && !scores.has(item.id)) scores.set(item.id, getEquipmentScore(item))
+    })
+    return scores
+  })
+  const getCachedEquipmentScore = equipment => equipmentScoreCache.value.get(equipment?.id) ?? getEquipmentScore(equipment)
   const activeSetStates = computed(() => playerStore.equipmentSetState.filter(set => set.count > 0))
 
   const getEquipmentSet = equipment => EQUIPMENT_SETS[equipment?.setId] || null
-  const getEquipmentComparison = equipment =>
-    compareEquipment(equipment, playerStore.equippedArtifacts[equipment?.slot || equipment?.type])
+  const getEquipmentComparison = equipment => {
+    const current = playerStore.equippedArtifacts[equipment?.slot || equipment?.type]
+    const candidateScore = getCachedEquipmentScore(equipment)
+    const currentScore = getCachedEquipmentScore(current)
+    const difference = candidateScore - currentScore
+    return {
+      candidateScore,
+      currentScore,
+      difference,
+      verdict: !current ? 'new-slot' : difference > 0 ? 'upgrade' : difference < 0 ? 'downgrade' : 'sidegrade'
+    }
+  }
   const getComparisonType = equipment => {
     const comparison = getEquipmentComparison(equipment)
     if (comparison.verdict === 'new-slot' || comparison.difference > 0) return 'success'
@@ -981,9 +1002,9 @@
         if (delta !== 0) return delta
       }
       if (equipmentSort.value === 'quality') return (qualityRank[b.quality] || 0) - (qualityRank[a.quality] || 0)
-      if (equipmentSort.value === 'score') return getEquipmentScore(b) - getEquipmentScore(a)
+      if (equipmentSort.value === 'score') return getCachedEquipmentScore(b) - getCachedEquipmentScore(a)
       if (equipmentSort.value === 'latest') return (Number(b.obtainedAt) || 0) - (Number(a.obtainedAt) || 0)
-      return getEquipmentScore(b) - getEquipmentScore(a)
+      return getCachedEquipmentScore(b) - getCachedEquipmentScore(a)
     })
   })
 

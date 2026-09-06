@@ -583,7 +583,8 @@ export const usePlayerStore = defineStore('player', {
       this.lastActiveAt = Date.now()
       if (!immediate) {
         if (saveTimer) clearTimeout(saveTimer)
-        saveTimer = setTimeout(() => this.saveData({ immediate: true }), 1500)
+        // 连续修炼、历练和整理背包时合并存档，避免频繁序列化与加密大背包阻塞界面。
+        saveTimer = setTimeout(() => this.saveData({ immediate: true }), 5000)
         return savePromise
       }
       if (saveTimer) {

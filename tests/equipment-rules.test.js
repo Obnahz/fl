@@ -124,6 +124,14 @@ test('装备比较会返回同栏位的战力提升值', () => {
   assert.equal(compareEquipment(stronger, null).verdict, 'new-slot')
 })
 
+test('高阶历练装备拥有更高等级下限与稳定成长', () => {
+  const low = createEquipmentDrop({ id: 'low', tier: 1, playerLevel: 120, rolls: { slot: 0, quality: 0, level: 0, stats: [0, 0] } })
+  const high = createEquipmentDrop({ id: 'high', tier: 13, playerLevel: 120, rolls: { slot: 0, quality: 0, level: 0, stats: [0, 0] } })
+  assert.ok(high.level > low.level)
+  assert.ok(high.stats.attack > low.stats.attack)
+  assert.ok(high.stats.critRate > low.stats.critRate)
+})
+
 test('套装加成只在达到两件和四件时生效', () => {
   const piece = slot => ({ id: slot, slot, setId: 'qingfeng', stats: {} })
   assert.deepEqual(getActiveEquipmentSetBonuses({ weapon: piece('weapon') }), {})

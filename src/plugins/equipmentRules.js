@@ -173,8 +173,12 @@ export const createEquipmentDrop = ({ id, tier = 1, playerLevel = 1, rolls = {} 
   const quality = getQuality(tier, playerLevel, rolls.quality)
   const qualityInfo = getQualityInfo(quality)
   const maximumLevel = Math.max(1, Math.floor(Number(playerLevel) || 1))
-  const level = Math.min(maximumLevel, 1 + Math.floor(clampRoll(rolls.level) * maximumLevel))
-  const tierMultiplier = 1 + (Math.min(7, Math.max(1, Number(tier) || 1)) - 1) * 0.55
+  const normalizedTier = Math.min(13, Math.max(1, Number(tier) || 1))
+  // 高阶地点的装备等级下限更高，避免连续掉落远低于当前装备的低等级白板。
+  const levelFloorRatio = Math.min(0.86, 0.48 + normalizedTier * 0.03)
+  const minimumLevel = Math.max(1, Math.floor(maximumLevel * levelFloorRatio))
+  const level = Math.min(maximumLevel, minimumLevel + Math.floor(clampRoll(rolls.level) * (maximumLevel - minimumLevel + 1)))
+  const tierMultiplier = 1 + (normalizedTier - 1) * 0.7
   const levelMultiplier = 1 + (level - 1) * 0.04
   const multiplier = getQualityPowerMultiplier(quality, playerLevel) * tierMultiplier * levelMultiplier
   const stats = {}
