@@ -2,42 +2,95 @@ import { buildDungeonPlayerCombatant, resolveAutoCombat } from './combatRules.js
 import { selectEnemyForLocation } from './enemies.js'
 import { EQUIPMENT_PITY_LIMIT, getEquipmentPityAfter } from './equipmentRules.js'
 import { STARTER_TECHNIQUE_ID, selectTechniqueForCombat } from './techniques.js'
-import { getQualityPowerMultiplier, rollQuality } from './quality.js'
+import { getQualityPowerMultiplier, normalizeQuality, rollQuality } from './quality.js'
 
-const PET_SPECIES = [
-  { id: 'spirit_cat', name: '灵猫', description: '敏捷的灵兽。' },
-  { id: 'cloud_fox', name: '云狐', description: '擅长隐匿与追踪。' },
-  { id: 'stone_tortoise', name: '玄甲龟', description: '拥有坚韧防御。' },
-  { id: 'flame_hound', name: '炎獒', description: '攻击性极强的灵兽。' }
+export const PET_SPECIES = [
+  {
+    id: 'spirit_cat', name: '灵猫', specialty: '迅影',
+    description: '身法轻灵，擅长闪避与抢先出手。',
+    multipliers: { speed: 1.16, dodgeRate: 1.35 }, bonuses: { dodgeResist: 0.03 }
+  },
+  {
+    id: 'cloud_fox', name: '云狐', specialty: '幻袭',
+    description: '借云气藏形，擅长暴击与连击。',
+    multipliers: { critRate: 1.3, comboRate: 1.25 }, bonuses: { finalDamageBoost: 0.025 }
+  },
+  {
+    id: 'stone_tortoise', name: '玄甲龟', specialty: '镇岳',
+    description: '玄甲厚重，擅长承伤与降低爆发伤害。',
+    multipliers: { health: 1.18, defense: 1.2 }, bonuses: { finalDamageReduce: 0.04, stunResist: 0.03 }
+  },
+  {
+    id: 'flame_hound', name: '炎獒', specialty: '焚杀号',
+    description: '炎息炽烈，擅长强化攻击与终结伤害。',
+    multipliers: { attack: 1.18, stunRate: 1.25 }, bonuses: { critDamageBoost: 0.08, finalDamageBoost: 0.02 }
+  }
 ]
+
+export const normalizeExplorationPet = (pet = {}) => {
+  if (pet?.type !== 'pet') return pet
+  const species = PET_SPECIES.find(item => item.id === pet.speciesId)
+    || PET_SPECIES.find(item => item.name === pet.name)
+    || PET_SPECIES[0]
+  const quality = normalizeQuality(pet.quality || pet.rarity)
+  const combatAttributes = { ...(pet.combatAttributes || {}) }
+  if (!pet.speciesId) {
+    for (const [key, multiplier] of Object.entries(species.multipliers || {})) {
+      if (Number.isFinite(Number(combatAttributes[key]))) {
+        combatAttributes[key] = key.endsWith('Rate')
+          ? Number((Number(combatAttributes[key]) * multiplier).toFixed(3))
+          : Math.round(Number(combatAttributes[key]) * multiplier)
+      }
+    }
+    for (const [key, value] of Object.entries(species.bonuses || {})) {
+      combatAttributes[key] = Number((Number(combatAttributes[key] || 0) + value).toFixed(3))
+    }
+  }
+  for (const key of ['attack', 'health', 'defense', 'speed', 'critRate', 'comboRate', 'counterRate', 'stunRate', 'dodgeRate', 'vampireRate']) {
+    if (!Number.isFinite(Number(combatAttributes[key]))) combatAttributes[key] = 0
+  }
+  return {
+    ...pet,
+    speciesId: species.id,
+    specialty: pet.specialty || species.specialty,
+    description: pet.description || species.description,
+    quality,
+    rarity: quality,
+    combatAttributes
+  }
+}
 
 const createExplorationPet = (level, tier, rolls = {}) => {
   const quality = rollQuality(Number(level) + Math.max(0, Number(tier) - 1) * 8, rolls.quality)
   const strength = getQualityPowerMultiplier(quality, level) * (1 + Math.max(0, Number(tier) - 1) * 0.12)
   const species = PET_SPECIES[Math.floor(clampRoll(rolls.species) * PET_SPECIES.length)]
   const base = { attack: 10, health: 110, defense: 8, speed: 10 }
+  const attributes = {
+    attack: Math.round(base.attack * strength * (species.multipliers.attack || 1)),
+    health: Math.round(base.health * strength * (species.multipliers.health || 1)),
+    defense: Math.round(base.defense * strength * (species.multipliers.defense || 1)),
+    speed: Math.round(base.speed * strength * (species.multipliers.speed || 1)),
+    critRate: Number((0.05 * strength * (species.multipliers.critRate || 1)).toFixed(3)),
+    comboRate: Number((0.04 * strength * (species.multipliers.comboRate || 1)).toFixed(3)),
+    counterRate: Number((0.03 * strength * (species.multipliers.counterRate || 1)).toFixed(3)),
+    stunRate: Number((0.02 * strength * (species.multipliers.stunRate || 1)).toFixed(3)),
+    dodgeRate: Number((0.04 * strength * (species.multipliers.dodgeRate || 1)).toFixed(3)),
+    vampireRate: Number((0.02 * strength).toFixed(3)),
+    ...Object.fromEntries(Object.entries(species.bonuses).map(([key, value]) => [key, Number((value * strength).toFixed(3))]))
+  }
   return {
     id: `exploration_pet_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     type: 'pet',
     name: species.name,
+    speciesId: species.id,
+    specialty: species.specialty,
     description: species.description,
     rarity: quality,
     quality,
     level: 1,
     star: 0,
     power: Math.round(strength * 100),
-    combatAttributes: {
-      attack: Math.round(base.attack * strength),
-      health: Math.round(base.health * strength),
-      defense: Math.round(base.defense * strength),
-      speed: Math.round(base.speed * strength),
-      critRate: Number((0.05 * strength).toFixed(3)),
-      comboRate: Number((0.04 * strength).toFixed(3)),
-      counterRate: Number((0.03 * strength).toFixed(3)),
-      stunRate: Number((0.02 * strength).toFixed(3)),
-      dodgeRate: Number((0.04 * strength).toFixed(3)),
-      vampireRate: Number((0.02 * strength).toFixed(3))
-    }
+    combatAttributes: attributes
   }
 }
 

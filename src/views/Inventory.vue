@@ -241,8 +241,8 @@
                   </template>
                   <p>{{ pet.description }}</p>
                   <n-space vertical>
-                    <n-tag :style="{ color: petRarities[pet.rarity].color }">
-                      {{ petRarities[pet.rarity].name }}
+                    <n-tag :style="{ color: getPetQualityInfo(pet).color }">
+                      {{ getPetQualityInfo(pet).name }}
                     </n-tag>
                     <n-space justify="space-between">
                       <n-text>等级: {{ pet.level || 1 }}</n-text>
@@ -265,14 +265,18 @@
       <n-descriptions bordered>
         <n-descriptions-item label="名称">{{ selectedPet.name }}</n-descriptions-item>
         <n-descriptions-item label="品质">
-          <n-tag :style="{ color: petRarities[selectedPet.rarity].color }">
-            {{ petRarities[selectedPet.rarity].name }}
+          <n-tag :style="{ color: getPetQualityInfo(selectedPet).color }">
+            {{ getPetQualityInfo(selectedPet).name }}
           </n-tag>
         </n-descriptions-item>
         <n-descriptions-item label="等级">{{ selectedPet.level || 1 }}</n-descriptions-item>
         <n-descriptions-item label="星级">{{ selectedPet.star || 0 }}</n-descriptions-item>
         <n-descriptions-item label="境界">{{ Math.floor((selectedPet.star || 0) / 5) }}阶</n-descriptions-item>
+        <n-descriptions-item label="种族特长">{{ selectedPet.specialty || '灵力共鸣' }}</n-descriptions-item>
       </n-descriptions>
+      <n-alert type="info" :show-icon="false" style="margin-top: 12px">
+        {{ selectedPet.description }}
+      </n-alert>
       <n-divider>属性加成</n-divider>
       <n-descriptions bordered>
         <n-descriptions-item label="攻击加成">
@@ -650,7 +654,7 @@
     if (selectedRarityToRelease.value === 'all') {
       return pets
     }
-    return pets.filter(pet => pet.rarity === selectedRarityToRelease.value)
+    return pets.filter(pet => normalizeQuality(pet.quality || pet.rarity) === selectedRarityToRelease.value)
   })
 
   // 当前页显示的灵宠
@@ -687,6 +691,7 @@
     uncommon: { name: '下品', color: '#2f855a', probability: 0.3, essenceBonus: 7 },
     common: { name: '凡品', color: '#6b7280', probability: 0.22, essenceBonus: 5 }
   }
+  const getPetQualityInfo = pet => getQualityInfo(normalizeQuality(pet?.quality || pet?.rarity))
 
   // 灵宠详情相关
   const showPetModal = ref(false)

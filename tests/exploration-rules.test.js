@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { calculateRecovery, resolveExploration } from '../src/plugins/explorationRules.js'
+import { calculateRecovery, normalizeExplorationPet, resolveExploration } from '../src/plugins/explorationRules.js'
 
 const location = {
   id: 'test_valley',
@@ -155,4 +155,46 @@ test('explicit boss roll selects a high-tier boss and keeps its skill reward on 
   assert.equal(result.enemy.type, 'boss')
   assert.equal(result.outcome, 'victory')
   assert.ok(result.rewards.some(reward => reward.type === 'skill' && reward.skillId))
+})
+
+test('different pet species provide distinct specialties at the same quality', () => {
+  const makePet = species => resolveExploration({
+    location: { ...location, tier: 5 },
+    player: { ...player, level: 80 },
+    rolls: {
+      danger: 0.9,
+      special: 0.9,
+      pet: 0,
+      species,
+      quality: 0.99999
+    }
+  }).reward.pet
+
+  const cat = makePet(0)
+  const fox = makePet(0.25)
+  const tortoise = makePet(0.5)
+  const hound = makePet(0.75)
+  assert.equal(cat.quality, fox.quality)
+  assert.equal(cat.quality, tortoise.quality)
+  assert.equal(cat.quality, hound.quality)
+  assert.ok(cat.combatAttributes.speed > fox.combatAttributes.speed)
+  assert.ok(fox.combatAttributes.critRate > cat.combatAttributes.critRate)
+  assert.ok(tortoise.combatAttributes.health > cat.combatAttributes.health)
+  assert.ok(hound.combatAttributes.attack > cat.combatAttributes.attack)
+  assert.notEqual(cat.specialty, fox.specialty)
+  assert.notEqual(fox.specialty, tortoise.specialty)
+})
+
+test('legacy pet records receive a stable species specialty and stat focus', () => {
+  const pet = normalizeExplorationPet({
+    type: 'pet', name: '云狐', rarity: 'celestial',
+    combatAttributes: { attack: 10, health: 100, defense: 8, speed: 10, critRate: 0.1, comboRate: 0.04 }
+  })
+  assert.equal(pet.speciesId, 'cloud_fox')
+  assert.equal(pet.specialty, '幻袭')
+  assert.equal(pet.quality, 'mythic')
+  assert.equal(pet.rarity, 'mythic')
+  assert.equal(pet.combatAttributes.attack, 10)
+  assert.equal(pet.combatAttributes.critRate, 0.13)
+  assert.equal(pet.combatAttributes.finalDamageBoost, 0.025)
 })

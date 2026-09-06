@@ -18,7 +18,7 @@ import {
   getSpiritualRoot,
   normalizeCharacterName
 } from '../plugins/gameRules'
-import { calculateRecovery, getRecoveryCost } from '../plugins/explorationRules'
+import { calculateRecovery, getRecoveryCost, normalizeExplorationPet } from '../plugins/explorationRules'
 import { getActiveEquipmentSetBonuses, getEquipmentSetState, getEquipmentStatDeltas } from '../plugins/equipmentRules'
 import {
   STARTER_TECHNIQUE_ID,
@@ -488,7 +488,7 @@ export const usePlayerStore = defineStore('player', {
             if (item?.type === 'pill') return normalizePillQuality(item)
             if (item?.type === 'pet') {
               const quality = normalizeQuality(item.quality || item.rarity)
-              return { ...item, quality, rarity: quality, qualityInfo: getQualityInfo(quality) }
+              return normalizeExplorationPet({ ...item, quality, rarity: quality, qualityInfo: getQualityInfo(quality) })
             }
             return item
           })
@@ -1634,6 +1634,7 @@ export const usePlayerStore = defineStore('player', {
         }
         // 如果是当前出战的灵宠，重新应用属性加成
         if (wasActive) {
+          this.activePet = currentPet
           this.applyPetBonuses()
         }
       }
